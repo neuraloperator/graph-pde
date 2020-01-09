@@ -20,10 +20,17 @@ import pickle
 # train2 = pickle.load(open("results/MPdiag_nik_4layer_r16_w64_Admm_train.txt", "rb"))
 # train3 = pickle.load(open("results/MPdense_nik_4layer_r16_w64_Admm_train.txt", "rb"))
 # train4 = pickle.load(open("results/MPgauss_nik_4layer_r16_w64_Admm_train.txt", "rb"))
-train1 = np.loadtxt("results/RNN_nik_4layer_r16_w64_Admm_train_1000.txt")[2:500]
-train2 = np.loadtxt("results/MPdiag_nik_4layer_r16_w64_Admm_train_1000.txt")[2:500]
-train3 = np.loadtxt("results/MPdense_nik_4layer_r16_w64_Admm_train_1000.txt")[2:500]
-train4 = np.loadtxt("results/MPgauss_nik_4layer_r16_w64_Admm_train_1000.txt")[2:500]
+n1 = 25
+n2 = 400
+
+# train1 = np.loadtxt("results/MPaug_r16_data10full_train.txt")[n1:n2]
+# train2 = np.loadtxt("results/MPaug_r32_data10full_train.txt")[n1:n2]
+# train3 = np.loadtxt("results/MPaug_r64_data10full_train.txt")[n1:n2]
+
+test1 = np.loadtxt("results/MPaug_r16_data10full_test.txt")[n1:n2]
+test2 = np.loadtxt("results/MPaug_r32_data10full_test.txt")[n1:n2]
+test3 = np.loadtxt("results/MPaug_r64_data10full_test.txt")[n1:n2]
+
 # test1 = np.loadtxt("results/MPdense_nik_4layer_r16_w64_Admm_train.txt")
 # test2 = np.loadtxt("results/MPdense_nik_4layer_r16_w64_Admm_train.txt")
 
@@ -47,10 +54,13 @@ train4 = np.loadtxt("results/MPgauss_nik_4layer_r16_w64_Admm_train_1000.txt")[2:
 # test_su = np.loadtxt(path + "/test_loss_su_net.txt")
 #test_fs = np.loadtxt(path + "/test_loss_fs_net.txt")
 
-plt.plot(train1, label='train constant kernel')
-plt.plot(train2, label='train diag kernel')
-plt.plot(train3, label='train dense kernel')
-plt.plot(train4, label='train gauss kernel')
+# plt.plot(train1, label='r16 train')
+# plt.plot(train2, label='r32 train')
+# plt.plot(train3, label='r64 train')
+plt.plot(test1, label='r16 test')
+plt.plot(test2, label='r32 test')
+plt.plot(test3, label='r64 test')
+
 # plt.plot(test2, label='test Edge GNN')
 # # plt.plot(test_u, label='fc + u-net')
 # # plt.plot(test_mp, label='edge')

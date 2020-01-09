@@ -16,10 +16,6 @@ import pickle
 
 
 
-
-
-
-
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -27,11 +23,11 @@ torch.manual_seed(0)
 #======================================================#
 
 
-Ntotal = 1024
-num_train = 1024
-num_test = 1024
+Ntotal = 2000
+num_train = 10
+num_test = 10
 num_data = num_train + num_test
-num_data_per_batch = 64
+num_data_per_batch = 1
 
 
 depth = 4
@@ -49,14 +45,12 @@ burigede = False
 TRAIN_PATH = 'data/piececonst_r65_N1024.mat'
 TEST_PATH = 'data/piececonst_r65_N10000.mat'
 
-path_preprocess = 'data/nik_1024_16'
-# path_preprocess = 'data/nik_1024_64_aug'
-# path_preprocess = 'data/nik_1024_16_aug'
+path_preprocess = 'data/nik_r64_10_full'
 
-path_train_err = "results/RNN3_r64_data10_train.txt"
-path_test_err = "results/RNN3_r64_data10_test.txt"
+path_train_err = "results/MPaug_r64_data10full_train.txt"
+path_test_err = "results/MPaug_r64_data10full_test.txt"
 
-epochs = 200
+epochs = 400
 
 
 
@@ -208,11 +202,11 @@ class Net_MP_diag3(nn.Module):
         super(Net_MP_diag3, self).__init__()
         self.fc1 = torch.nn.Linear(3, width)
 
-        kernel1 = nn.Sequential(nn.Linear(3+4, width//4), nn.ReLU(),  nn.Linear(width//4, width))
+        kernel1 = nn.Sequential(nn.Linear(3, width//4), nn.ReLU(),  nn.Linear(width//4, width))
         self.conv1 = NNConv(width, width, kernel1, aggr='mean')
-        kernel2 = nn.Sequential(nn.Linear(3+4, width // 4), nn.ReLU(), nn.Linear(width // 4, width))
+        kernel2 = nn.Sequential(nn.Linear(3, width // 4), nn.ReLU(), nn.Linear(width // 4, width))
         self.conv2 = NNConv(width, width, kernel2, aggr='mean')
-        kernel3 = nn.Sequential(nn.Linear(3+4, width // 4), nn.ReLU(), nn.Linear(width // 4, width))
+        kernel3 = nn.Sequential(nn.Linear(3, width // 4), nn.ReLU(), nn.Linear(width // 4, width))
         self.conv3 = NNConv(width, width, kernel3, aggr='mean')
 
         self.fc2 = torch.nn.Linear(width, 1)
@@ -331,10 +325,10 @@ if(preprocess):
 
     dataset = []
     for b in range(num_data):
-        if b%100 == 0:
-            print(b)
+        if b%1 == 0:
+            print('preprocessing: ', b)
         theta = data_input[b, :]
-        X, edge_index, edge_attr = grid_edge(grid_size, grid_size, theta)
+        X, edge_index, edge_attr = grid_edge_aug_full(grid_size, grid_size, 0.1, theta)
         # X, edge_index, edge_attr, mask_index, num_nodes = multi_grid(depth=3, n_x=grid_size, n_y=grid_size, grid='grid_edge', params=theta)
         x = torch.tensor(X, dtype=torch.float)
         x = torch.cat([x,theta.reshape(-1,1)], dim=1)
@@ -342,7 +336,6 @@ if(preprocess):
 
         edge_index = torch.tensor(edge_index,dtype=torch.long)
         dataset.append(Data(x=x, y=y, edge_index=edge_index, edge_attr=edge_attr))
-        # dataset.append(Data(x=x, y=y, edge_index=edge_index, edge_attr=edge_attr, mask_index=mask_index))
 
     pickle.dump(dataset, open(path_preprocess, "wb"))
     print('preprocessing finished')
@@ -350,12 +343,12 @@ if(preprocess):
     print(X.shape, edge_index.shape, edge_attr.shape)
 else:
     dataset = pickle.load(open(path_preprocess, "rb"))
+    print(dataset[0].x.shape, dataset[0].edge_index.shape, dataset[0].edge_attr.shape)
 
 #==============================================================================#
 # number of train data
 
-# train_loader = DataLoader(dataset[:num_train], batch_size=num_data_per_batch, shuffle=True)
-train_loader = DataLoader(dataset[:10], batch_size=num_data_per_batch, shuffle=True)
+train_loader = DataLoader(dataset[:num_train], batch_size=num_data_per_batch, shuffle=True)
 test_loader  = DataLoader(dataset[num_train:], batch_size=num_data_per_batch, shuffle=False)
 
 #################################################
@@ -369,13 +362,13 @@ test_loader  = DataLoader(dataset[num_train:], batch_size=num_data_per_batch, sh
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # model = Net().to(device)
 # model = RNN_Net().to(device)
-model = RNN_Net3().to(device)
+# model = RNN_Net3().to(device)
 # model = RNN_multi_grid().to(device)
 # model = Net_MP().to(device)
 # model = Net_MP_diag().to(device)
 # model = Net_MP_diag3().to(device)
 # model = Net_MP_one().to(device)
-# model = Net_MP_Gauss().to(device)
+model = Net_MP_Gauss().to(device)
 #
 # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True)
 # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, 1e-6)
