@@ -32,9 +32,11 @@ num_data_per_batch = 1
 
 depth = 4
 width = 32
+learning_rate = 0.01
 
 grid_size = 64
-downsample_level = 4
+downsample_level = 2
+resolution = grid_size // downsample_level
 preprocess = False
 
 
@@ -45,12 +47,13 @@ burigede = False
 TRAIN_PATH = 'data/piececonst_r65_N1024.mat'
 TEST_PATH = 'data/piececonst_r65_N10000.mat'
 
-path_preprocess = 'data/nik_r64_10_full'
+path_preprocess = 'data/nik_r'+str(resolution)+'_10_full'
 
-path_train_err = "results/MPaug_r64_data10full_train.txt"
-path_test_err = "results/MPaug_r64_data10full_test.txt"
+path_train_err = 'results/MPaug_r'+str(resolution)+'_data10full_train.txt'
+path_test_err = 'results/MPaug_r'+str(resolution)+'_data10full_test.txt'
+path_image = 'image/MPaug_r'+str(resolution)+'_data10full.png'
 
-epochs = 400
+epochs = 200
 
 
 
@@ -372,36 +375,45 @@ model = Net_MP_Gauss().to(device)
 #
 # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True)
 # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, 1e-6)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=5e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
-
+loss_func = LpLoss(size_average=False)
 
 test_loss = []
 train_loss = []
 model.train()
 for epoch in range(epochs):
-    train_error = 0
+    train_error1 = 0
+    train_error2 = 0
     for batch in train_loader:
         batch = batch.to(device)
         optimizer.zero_grad()
         out = model(batch)
         #y = torch.cat([data.y for data in batch])
-        loss = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
-        train_error = train_error + loss
-        loss.backward()
+        loss1 = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
+        loss2 = loss_func(out.view(-1, resolution ** 2), batch.y.view(-1, resolution ** 2))
+        train_error1 = train_error1 + loss1
+        train_error2 = train_error2 + loss2
+
+        loss2.backward()
         optimizer.step()
         # scheduler.step()
-    train_loss.append(train_error / len(train_loader))
+
     test_error = 0
     with torch.no_grad():
         for batch in test_loader:
             batch = batch.to(device)
             pred = model(batch)
-            test_error += F.mse_loss(pred.view(-1, 1), batch.y.view(-1, 1))
+            # test_error += F.mse_loss(pred.view(-1, 1), batch.y.view(-1, 1))
+            test_error += loss_func(pred.view(-1, resolution ** 2), batch.y.view(-1, resolution ** 2)) / num_data_per_batch
 
+    train_loss.append(train_error2 / len(train_loader))
     test_loss.append(test_error/len(test_loader) )
-    print(epoch, 'train loss: {:.4f}'.format(train_error/len(train_loader)),
-                 'test L2 error: {:.4f}'.format(test_error/len(test_loader)))
+    # print(epoch, 'train loss: {:.4f}'.format(train_error/len(train_loader)),
+                 # 'test L2 error: {:.4f}'.format(test_error/len(test_loader)))
+    print(epoch, 'train loss1: {:.4f}'.format(train_error1/len(train_loader)),
+                'train loss2: {:.4f}'.format(train_error2/len(train_loader)),
+                 'test L2 error: {:.4f}'.format(test_error/len(test_loader)) )
 
 
 np.savetxt(path_train_err, train_loss)
@@ -428,33 +440,36 @@ plt.plot(test_loss, label='test loss')
 plt.legend(loc='upper right')
 plt.show()
 '''
-# r = np.random.randint(num_data_per_batch)
-#
-# truth = test_loader.dataset[r].y.detach().cpu().numpy().reshape((grid_size, grid_size))
-# model.cpu()
-# approx = model(test_loader.dataset[r]).detach().numpy().reshape((grid_size, grid_size))
-#
-# plt.figure()
-# plt.subplot(1, 3, 1)
-# plt.imshow(truth)
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.colorbar(fraction=0.046, pad=0.04)
-# plt.title('Ground Truth')
-#
-# plt.subplot(1, 3, 2)
-# plt.imshow(approx)
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.colorbar(fraction=0.046, pad=0.04)
-# plt.title('Approximation')
-#
-# plt.subplot(1, 3, 3)
-# plt.imshow((approx - truth) ** 2)
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.colorbar(fraction=0.046, pad=0.04)
-# plt.title('Error')
-#
-# plt.subplots_adjust(wspace=0.5, hspace=0.5)
-# plt.show()
+r = np.random.randint(num_data_per_batch)
+
+truth = test_loader.dataset[0].y.detach().cpu().numpy().reshape((resolution, resolution))
+model.cpu()
+approx = model(test_loader.dataset[0]).detach().numpy().reshape((resolution, resolution))
+
+plt.figure()
+plt.subplot(1, 3, 1)
+plt.imshow(truth)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Ground Truth')
+
+plt.subplot(1, 3, 2)
+plt.imshow(approx)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Approximation')
+
+plt.subplot(1, 3, 3)
+plt.imshow((approx - truth) ** 2)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Error')
+
+plt.subplots_adjust(wspace=0.5, hspace=0.5)
+plt.show()
+
+plt.savefig(path_image)
+

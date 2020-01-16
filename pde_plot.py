@@ -23,13 +23,13 @@ import pickle
 n1 = 25
 n2 = 400
 
-# train1 = np.loadtxt("results/MPaug_r16_data10full_train.txt")[n1:n2]
-# train2 = np.loadtxt("results/MPaug_r32_data10full_train.txt")[n1:n2]
-# train3 = np.loadtxt("results/MPaug_r64_data10full_train.txt")[n1:n2]
+train1 = np.loadtxt("results/RNN3_r16_data10_train.txt")[n1:n2]
+train2 = np.loadtxt("results/RNN3_r16_data100_train.txt")[n1:n2]
+train3 = np.loadtxt("results/RNN3_r16_data1000_train.txt")[n1:n2]
 
-test1 = np.loadtxt("results/MPaug_r16_data10full_test.txt")[n1:n2]
-test2 = np.loadtxt("results/MPaug_r32_data10full_test.txt")[n1:n2]
-test3 = np.loadtxt("results/MPaug_r64_data10full_test.txt")[n1:n2]
+# test1 = np.loadtxt("results/MPaug_r16_data10full_test.txt")[n1:n2]
+# test2 = np.loadtxt("results/MPaug_r32_data10full_test.txt")[n1:n2]
+# test3 = np.loadtxt("results/MPaug_r64_data10full_test.txt")[n1:n2]
 
 # test1 = np.loadtxt("results/MPdense_nik_4layer_r16_w64_Admm_train.txt")
 # test2 = np.loadtxt("results/MPdense_nik_4layer_r16_w64_Admm_train.txt")
@@ -54,12 +54,12 @@ test3 = np.loadtxt("results/MPaug_r64_data10full_test.txt")[n1:n2]
 # test_su = np.loadtxt(path + "/test_loss_su_net.txt")
 #test_fs = np.loadtxt(path + "/test_loss_fs_net.txt")
 
-# plt.plot(train1, label='r16 train')
-# plt.plot(train2, label='r32 train')
-# plt.plot(train3, label='r64 train')
-plt.plot(test1, label='r16 test')
-plt.plot(test2, label='r32 test')
-plt.plot(test3, label='r64 test')
+plt.plot(train1, label='10 equations')
+plt.plot(train2, label='100 equations')
+plt.plot(train3, label='1000 equations')
+# plt.plot(test1, label='r16 test')
+# plt.plot(test2, label='r32 test')
+# plt.plot(test3, label='r64 test')
 
 # plt.plot(test2, label='test Edge GNN')
 # # plt.plot(test_u, label='fc + u-net')
