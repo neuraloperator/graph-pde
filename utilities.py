@@ -2,6 +2,9 @@ import torch
 import numpy as np
 import scipy.io
 import h5py
+import sklearn.metrics
+
+import torch.nn as nn
 
 #################################################
 #
@@ -9,53 +12,6 @@ import h5py
 #
 #################################################
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-class LpLoss(object):
-    def __init__(self, d=2, p=2, size_average=True, reduction=True):
-        super(LpLoss, self).__init__()
-
-        #Dimension and Lp-norm type are postive
-        assert d > 0 and p > 0
-
-        self.d = d
-        self.p = p
-        self.reduction = reduction
-        self.size_average = size_average
-
-    def abs(self, x, y):
-        num_examples = x.size()[0]
-
-        #Assume uniform mesh
-        h = 1.0 / (x_size.size()[1] - 1.0)
-
-        all_norms = (h**(self.d/self.p))*torch.norm(x.view(num_examples,-1) - y.view(num_examples,-1), self.p, 1)
-
-        if self.reduction:
-            if self.size_average:
-                return torch.mean(all_norms)
-            else:
-                return torch.sum(all_norms)
-
-        return all_norms
-
-    def rel(self, x, y):
-        num_examples = x.size()[0]
-
-        diff_norms = torch.norm(x.view(num_examples,-1) - y.view(num_examples,-1), self.p, 1)
-        y_norms = torch.norm(y.view(num_examples,-1), self.p, 1)
-
-        if self.reduction:
-            if self.size_average:
-                return torch.mean(diff_norms/y_norms)
-            else:
-                return torch.sum(diff_norms/y_norms)
-
-        return diff_norms/y_norms
-
-    def __call__(self, x, y):
-        return self.rel(x, y)
-
 
 class MatReader(object):
     def __init__(self, file_path, to_torch=True, to_cuda=False, to_float=True):
@@ -112,24 +68,15 @@ class MatReader(object):
 
 
 class UnitGaussianNormalizer(object):
-    def __init__(self, x, zeroone_first=True):
+    def __init__(self, x):
         super(UnitGaussianNormalizer, self).__init__()
-        self.zeroone_first = zeroone_first
-        if self.zeroone_first:
-            self.min = torch.min(x, 0)[0].view(-1, )
-            self.max = torch.max(x, 0)[0].view(-1, )
 
-            s = x.size()
-            x = ((x.view(s[0], -1) - self.min) / (self.max - self.min)).view(s)
-
-        self.mean = torch.mean(x, 0).view(-1, )
-        self.std = torch.std(x, 0).view(-1, )
+        self.mean = torch.mean(x, 0).view(-1)
+        self.std = torch.std(x, 0).view(-1)
 
     def encode(self, x):
         s = x.size()
         x = x.view(s[0], -1)
-        if self.zeroone_first:
-            x = (x - self.min) / (self.max - self.min)
         x = (x - self.mean) / self.std
         x = x.view(s)
         return x
@@ -138,10 +85,154 @@ class UnitGaussianNormalizer(object):
         s = x.size()
         x = x.view(s[0], -1)
         x = (x * self.std) + self.mean
-        if self.zeroone_first:
-            x = (x * (self.max - self.min)) + self.min
         x = x.view(s)
         return x
+
+    def cuda(self):
+        self.mean = self.mean.cuda()
+        self.std = self.std.cuda()
+
+class RangeNormalizer(object):
+    def __init__(self, x, low=0.0, high=1.0):
+        super(RangeNormalizer, self).__init__()
+        mymin = torch.min(x, 0)[0].view(-1)
+        mymax = torch.max(x, 0)[0].view(-1)
+
+        self.a = (high - low)/(mymax - mymin)
+        self.b = -a*mymax + high
+
+    def encode(self, x):
+        s = x.size()
+        x = x.view(s[0], -1)
+        x = self.a*x + self.b
+        x = x.view(s)
+        return x
+
+    def decode(self, x):
+        s = x.size()
+        x = x.view(s[0], -1)
+        x = (x - self.b)/self.a
+        x = x.view(s)
+        return x
+
+class LpLoss(object):
+    def __init__(self, d=2, p=2, size_average=True, reduction=True):
+        super(LpLoss, self).__init__()
+
+        #Dimension and Lp-norm type are postive
+        assert d > 0 and p > 0
+
+        self.d = d
+        self.p = p
+        self.reduction = reduction
+        self.size_average = size_average
+
+    def abs(self, x, y):
+        num_examples = x.size()[0]
+
+        #Assume uniform mesh
+        h = 1.0 / (x_size.size()[1] - 1.0)
+
+        all_norms = (h**(self.d/self.p))*torch.norm(x.view(num_examples,-1) - y.view(num_examples,-1), self.p, 1)
+
+        if self.reduction:
+            if self.size_average:
+                return torch.mean(all_norms)
+            else:
+                return torch.sum(all_norms)
+
+        return all_norms
+
+    def rel(self, x, y):
+        num_examples = x.size()[0]
+
+        diff_norms = torch.norm(x.view(num_examples,-1) - y.view(num_examples,-1), self.p, 1)
+        y_norms = torch.norm(y.view(num_examples,-1), self.p, 1)
+
+        if self.reduction:
+            if self.size_average:
+                return torch.mean(diff_norms/y_norms)
+            else:
+                return torch.sum(diff_norms/y_norms)
+
+        return diff_norms/y_norms
+
+    def __call__(self, x, y):
+        return self.rel(x, y)
+
+class DenseNet(torch.nn.Module):
+    def __init__(self, layers, nonlinearity, out_nonlinearity=None, normalize=False):
+        super(DenseNet, self).__init__()
+
+        self.n_layers = len(layers) - 1
+
+        assert self.n_layers >= 1
+
+        self.layers = nn.ModuleList()
+
+        for j in range(self.n_layers):
+            self.layers.append(nn.Linear(layers[j], layers[j+1]))
+
+            if j != self.n_layers - 1:
+                if normalize:
+                    self.layers.append(nn.BatchNorm1d(layers[j+1]))
+
+                self.layers.append(nonlinearity())
+
+        if out_nonlinearity is not None:
+            self.layers.append(out_nonlinearity())
+
+    def forward(self, x):
+        for _, l in enumerate(self.layers):
+            x = l(x)
+
+        return x
+
+class SquareMeshGenerator(object):
+    def __init__(self, real_space, mesh_size):
+        super(SquareMeshGenerator, self).__init__()
+
+        self.d = len(real_space)
+
+        assert len(mesh_size) == self.d
+
+        if self.d == 1:
+            self.n = mesh_size[0]
+            self.grid = np.linspace(real_space[0][0], real_space[0][1], self.n).reshape((self.n, 1))
+        else:
+            self.n = 1
+            grids = []
+            for j in range(self.d):
+                grids.append(np.linspace(real_space[j][0], real_space[j][1], mesh_size[j]))
+                self.n *= mesh_size[j]
+
+            self.grid = np.vstack([xx.ravel() for xx in np.meshgrid(*grids)]).T
+    
+    def ball_connectivity(self, r):
+        pwd = sklearn.metrics.pairwise_distances(self.grid)
+        self.edge_index = np.vstack(np.where(pwd <= r))
+        self.n_edges = self.edge_index.shape[1]
+
+        return torch.tensor(self.edge_index, dtype=torch.long)
+
+    def attributes(self, f=None, theta=None):
+        if f is None:
+            if theta is None:
+                edge_attr = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+            else:
+                edge_attr = np.zeros((self.n_edges, 2*self.d + 1))
+                edge_attr[:,0:2*self.d] = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+                edge_attr[:,2*self.d] = theta[self.edge_index[1]]
+        else:
+            xy = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+            if theta is None:
+                edge_attr = f(xy[:,0:self.d], xy[:,self.d:])
+            else:
+                edge_attr = f(xy[:,0:self.d], xy[:,self.d:], theta[self.edge_index[0]], theta[self.edge_index[1]])
+
+        return torch.tensor(edge_attr, dtype=torch.float)
+
+
 
 
 
