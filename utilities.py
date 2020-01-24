@@ -68,23 +68,25 @@ class MatReader(object):
 
 
 class UnitGaussianNormalizer(object):
-    def __init__(self, x):
+    def __init__(self, x, eps=0.000001):
         super(UnitGaussianNormalizer, self).__init__()
 
         self.mean = torch.mean(x, 0).view(-1)
         self.std = torch.std(x, 0).view(-1)
 
+        self.eps = eps
+
     def encode(self, x):
         s = x.size()
         x = x.view(s[0], -1)
-        x = (x - self.mean) / self.std
+        x = (x - self.mean) / (self.std + self.eps)
         x = x.view(s)
         return x
 
     def decode(self, x):
         s = x.size()
         x = x.view(s[0], -1)
-        x = (x * self.std) + self.mean
+        x = (x * (self.std + self.eps)) + self.mean
         x = x.view(s)
         return x
 
