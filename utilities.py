@@ -68,7 +68,7 @@ class MatReader(object):
 
 
 class UnitGaussianNormalizer(object):
-    def __init__(self, x, eps=0.000001):
+    def __init__(self, x, eps=0.00001):
         super(UnitGaussianNormalizer, self).__init__()
 
         self.mean = torch.mean(x, 0).view(-1)
@@ -93,6 +93,10 @@ class UnitGaussianNormalizer(object):
     def cuda(self):
         self.mean = self.mean.cuda()
         self.std = self.std.cuda()
+
+    def cpu(self):
+        self.mean = self.mean.cpu()
+        self.std = self.std.cpu()
 
 class RangeNormalizer(object):
     def __init__(self, x, low=0.0, high=1.0):
@@ -195,6 +199,97 @@ class SquareMeshGenerator(object):
         super(SquareMeshGenerator, self).__init__()
 
         self.d = len(real_space)
+        self.s = mesh_size[0]
+
+        assert len(mesh_size) == self.d
+
+        if self.d == 1:
+            self.n = mesh_size[0]
+            self.grid = np.linspace(real_space[0][0], real_space[0][1], self.n).reshape((self.n, 1))
+        else:
+            self.n = 1
+            grids = []
+            for j in range(self.d):
+                grids.append(np.linspace(real_space[j][0], real_space[j][1], mesh_size[j]))
+                self.n *= mesh_size[j]
+
+            self.grid = np.vstack([xx.ravel() for xx in np.meshgrid(*grids)]).T
+    
+    def ball_connectivity(self, r):
+        pwd = sklearn.metrics.pairwise_distances(self.grid)
+        self.edge_index = np.vstack(np.where(pwd <= r))
+        self.n_edges = self.edge_index.shape[1]
+
+        return torch.tensor(self.edge_index, dtype=torch.long)
+
+    def get_grid(self):
+        return torch.tensor(self.grid, dtype=torch.float)
+
+    def attributes(self, f=None, theta=None):
+        if f is None:
+            if theta is None:
+                edge_attr = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+            else:
+                edge_attr = np.zeros((self.n_edges, 3*self.d))
+                edge_attr[:,0:2*self.d] = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+                edge_attr[:, 2 * self.d] = theta[self.edge_index[0]]
+                edge_attr[:, 2 * self.d +1] = theta[self.edge_index[1]]
+        else:
+            xy = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+            if theta is None:
+                edge_attr = f(xy[:,0:self.d], xy[:,self.d:])
+            else:
+                edge_attr = f(xy[:,0:self.d], xy[:,self.d:], theta[self.edge_index[0]], theta[self.edge_index[1]])
+
+        return torch.tensor(edge_attr, dtype=torch.float)
+
+    def get_boundary(self):
+        s = self.s
+        n = self.n
+        boundary1 = np.array(range(0, s))
+        boundary2 = np.array(range(n - s, n))
+        boundary3 = np.array(range(s, n, s))
+        boundary4 = np.array(range(2 * s - 1, n, s))
+        self.boundary = np.concatenate([boundary1, boundary2, boundary3, boundary4])
+
+    def boundary_connectivity2d(self, stride=1):
+
+        boundary = self.boundary[::stride]
+        boundary_size = len(boundary)
+        vertice1 = np.array(range(self.n))
+        vertice1 = np.repeat(vertice1, boundary_size)
+        vertice2 = np.tile(boundary, self.n)
+        self.edge_index_boundary = np.stack([vertice2, vertice1], axis=0)
+        self.n_edges_boundary = self.edge_index_boundary.shape[1]
+        return torch.tensor(self.edge_index_boundary, dtype=torch.long)
+
+    def attributes_boundary(self, f=None, theta=None):
+        # if self.edge_index_boundary == None:
+        #     self.boundary_connectivity2d()
+        if f is None:
+            if theta is None:
+                edge_attr_boundary = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+            else:
+                edge_attr_boundary = np.zeros((self.n_edges_boundary, 3*self.d))
+                edge_attr_boundary[:,0:2*self.d] = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+                edge_attr_boundary[:, 2 * self.d] = theta[self.edge_index_boundary[0]]
+                edge_attr_boundary[:, 2 * self.d +1] = theta[self.edge_index_boundary[1]]
+        else:
+            xy = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+            if theta is None:
+                edge_attr_boundary = f(xy[:,0:self.d], xy[:,self.d:])
+            else:
+                edge_attr_boundary = f(xy[:,0:self.d], xy[:,self.d:], theta[self.edge_index_boundary[0]], theta[self.edge_index_boundary[1]])
+
+        return torch.tensor(edge_attr_boundary, dtype=torch.float)
+
+
+class RandomMeshGenerator(object):
+    def __init__(self, real_space, mesh_size, sample_size):
+        super(RandomMeshGenerator, self).__init__()
+
+        self.d = len(real_space)
+        self.m = sample_size
 
         assert len(mesh_size) == self.d
 
@@ -210,11 +305,24 @@ class SquareMeshGenerator(object):
 
             self.grid = np.vstack([xx.ravel() for xx in np.meshgrid(*grids)]).T
 
+        if self.m > self.n:
+                self.m = self.n
+
+        self.idx = np.array(range(self.n))
+        self.grid_sample = self.grid
+
+
+    def sample(self):
+        perm = torch.randperm(self.n)
+        self.idx = perm[:self.m]
+        self.grid_sample = self.grid[self.idx]
+        return self.idx
+
     def get_grid(self):
-        return torch.tensor(self.grid, dtype=torch.float)
-    
+        return torch.tensor(self.grid_sample, dtype=torch.float)
+
     def ball_connectivity(self, r):
-        pwd = sklearn.metrics.pairwise_distances(self.grid)
+        pwd = sklearn.metrics.pairwise_distances(self.grid_sample)
         self.edge_index = np.vstack(np.where(pwd <= r))
         self.n_edges = self.edge_index.shape[1]
 
@@ -223,21 +331,62 @@ class SquareMeshGenerator(object):
     def attributes(self, f=None, theta=None):
         if f is None:
             if theta is None:
-                edge_attr = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+                edge_attr = self.grid[self.edge_index.T].reshape((self.n_edges, -1))
             else:
-                edge_attr = np.zeros((self.n_edges, 2*self.d + 1))
-                edge_attr[:,0:2*self.d] = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
-                edge_attr[:,2*self.d] = theta[self.edge_index[1]]
+                theta = theta[self.idx]
+                edge_attr = np.zeros((self.n_edges, 3 * self.d))
+                edge_attr[:, 0:2 * self.d] = self.grid_sample[self.edge_index.T].reshape((self.n_edges, -1))
+                edge_attr[:, 2 * self.d] = theta[self.edge_index[0]]
+                edge_attr[:, 2 * self.d + 1] = theta[self.edge_index[1]]
         else:
-            xy = self.grid[self.edge_index.T].reshape((self.n_edges,-1))
+            xy = self.grid_sample[self.edge_index.T].reshape((self.n_edges, -1))
             if theta is None:
-                edge_attr = f(xy[:,0:self.d], xy[:,self.d:])
+                edge_attr = f(xy[:, 0:self.d], xy[:, self.d:])
             else:
-                edge_attr = f(xy[:,0:self.d], xy[:,self.d:], theta[self.edge_index[0]], theta[self.edge_index[1]])
+                theta = theta[self.idx]
+                edge_attr = f(xy[:, 0:self.d], xy[:, self.d:], theta[self.edge_index[0]], theta[self.edge_index[1]])
 
         return torch.tensor(edge_attr, dtype=torch.float)
 
-
+    # def get_boundary(self):
+    #     s = self.s
+    #     n = self.n
+    #     boundary1 = np.array(range(0, s))
+    #     boundary2 = np.array(range(n - s, n))
+    #     boundary3 = np.array(range(s, n, s))
+    #     boundary4 = np.array(range(2 * s - 1, n, s))
+    #     self.boundary = np.concatenate([boundary1, boundary2, boundary3, boundary4])
+    #
+    # def boundary_connectivity2d(self, stride=1):
+    #
+    #     boundary = self.boundary[::stride]
+    #     boundary_size = len(boundary)
+    #     vertice1 = np.array(range(self.n))
+    #     vertice1 = np.repeat(vertice1, boundary_size)
+    #     vertice2 = np.tile(boundary, self.n)
+    #     self.edge_index_boundary = np.stack([vertice2, vertice1], axis=0)
+    #     self.n_edges_boundary = self.edge_index_boundary.shape[1]
+    #     return torch.tensor(self.edge_index_boundary, dtype=torch.long)
+    #
+    # def attributes_boundary(self, f=None, theta=None):
+    #     # if self.edge_index_boundary == None:
+    #     #     self.boundary_connectivity2d()
+    #     if f is None:
+    #         if theta is None:
+    #             edge_attr_boundary = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+    #         else:
+    #             edge_attr_boundary = np.zeros((self.n_edges_boundary, 3*self.d))
+    #             edge_attr_boundary[:,0:2*self.d] = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+    #             edge_attr_boundary[:, 2 * self.d] = theta[self.edge_index_boundary[0]]
+    #             edge_attr_boundary[:, 2 * self.d +1] = theta[self.edge_index_boundary[1]]
+    #     else:
+    #         xy = self.grid[self.edge_index_boundary.T].reshape((self.n_edges_boundary,-1))
+    #         if theta is None:
+    #             edge_attr_boundary = f(xy[:,0:self.d], xy[:,self.d:])
+    #         else:
+    #             edge_attr_boundary = f(xy[:,0:self.d], xy[:,self.d:], theta[self.edge_index_boundary[0]], theta[self.edge_index_boundary[1]])
+    #
+    #     return torch.tensor(edge_attr_boundary, dtype=torch.float)
 
 
 
