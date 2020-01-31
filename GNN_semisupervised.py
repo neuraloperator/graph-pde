@@ -141,7 +141,8 @@ for j in range(ntrain):
         edge_index = meshgenerator.ball_connectivity(radius)
         edge_attr = meshgenerator.attributes(theta=train_x[j,:])
         #data_train.append(Data(x=init_point.clone().view(-1,1), y=train_y[j,:], edge_index=edge_index, edge_attr=edge_attr))
-        data_train.append(Data(x=torch.cat([grid, train_x[j,idx].reshape(-1,1)], dim=1), y=train_y[j,idx], edge_index=edge_index, edge_attr=edge_attr))
+        data_train.append(Data(x=torch.cat([grid, train_x[j,idx].reshape(-1,1)], dim=1),
+                               y=train_y[j,idx], edge_index=edge_index, edge_attr=edge_attr))
         print(j,i, 'grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
 
 
@@ -152,7 +153,8 @@ data_test = []
 for j in range(ntest):
     edge_attr = meshgenerator.attributes(theta=test_x[j,:])
     #data_test.append(Data(x=init_point.clone().view(-1,1), y=test_y[j,:], edge_index=edge_index, edge_attr=edge_attr))
-    data_test.append(Data(x=torch.cat([grid, test_x[j,:].reshape(-1,1)], dim=1), y=test_y[j,:], edge_index=edge_index, edge_attr=edge_attr))
+    data_test.append(Data(x=torch.cat([grid, test_x[j,:].reshape(-1,1)], dim=1),
+                          y=test_y[j,:], edge_index=edge_index, edge_attr=edge_attr))
 print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
 
 # meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=m)

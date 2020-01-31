@@ -83,9 +83,9 @@ width = 32
 ker_width = 64
 depth = 4
 edge_features = 6
-node_features = 3
+node_features = 6
 
-epochs = 20
+epochs = 50
 learning_rate = 0.001
 scheduler_step = 50
 scheduler_gamma = 0.8
@@ -114,16 +114,16 @@ test_a_grady = reader.read_field('Kcoeff_y')[:ntest,::r,::r].reshape(ntest,-1)
 test_u = reader.read_field('sol')[:ntest,::r,::r].reshape(ntest,-1)
 
 
-a_normalizer = UnitGaussianNormalizer(train_a)
+a_normalizer = GaussianNormalizer(train_a)
 train_a = a_normalizer.encode(train_a)
 test_a = a_normalizer.encode(test_a)
-as_normalizer = UnitGaussianNormalizer(train_a_smooth)
+as_normalizer = GaussianNormalizer(train_a_smooth)
 train_a_smooth = as_normalizer.encode(train_a_smooth)
 test_a_smooth = as_normalizer.encode(test_a_smooth)
-agx_normalizer = UnitGaussianNormalizer(train_a_gradx)
+agx_normalizer = GaussianNormalizer(train_a_gradx)
 train_a_gradx = agx_normalizer.encode(train_a_gradx)
 test_a_gradx = agx_normalizer.encode(test_a_gradx)
-agy_normalizer = UnitGaussianNormalizer(train_a_grady)
+agy_normalizer = GaussianNormalizer(train_a_grady)
 train_a_grady = agy_normalizer.encode(train_a_grady)
 test_a_grady = agy_normalizer.encode(test_a_grady)
 
@@ -135,40 +135,40 @@ train_u = u_normalizer.encode(train_u)
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[s,s])
 edge_index = meshgenerator.ball_connectivity(radius_train)
 grid = meshgenerator.get_grid()
-# meshgenerator.get_boundary()
-# edge_index_boundary = meshgenerator.boundary_connectivity2d(stride = stride)
+meshgenerator.get_boundary()
+edge_index_boundary = meshgenerator.boundary_connectivity2d(stride = stride)
 
 data_train = []
 for j in range(ntrain):
     edge_attr = meshgenerator.attributes(theta=train_a[j,:])
-    # edge_attr_boundary = meshgenerator.attributes_boundary(theta=train_u[j,:])
+    edge_attr_boundary = meshgenerator.attributes_boundary(theta=train_a[j,:])
     data_train.append(Data(x=torch.cat([grid, train_a[j,:].reshape(-1, 1),
-                                        # train_a_smooth[j,:].reshape(-1, 1), train_a_gradx[j,:].reshape(-1, 1), train_a_grady[j,:].reshape(-1, 1)
+                                        train_a_smooth[j,:].reshape(-1, 1), train_a_gradx[j,:].reshape(-1, 1), train_a_grady[j,:].reshape(-1, 1)
                                         ], dim=1),
                            y=train_u[j,:],
                            edge_index=edge_index, edge_attr=edge_attr,
-                           # edge_index_boundary=edge_index_boundary, edge_attr_boundary= edge_attr_boundary
+                           edge_index_boundary=edge_index_boundary, edge_attr_boundary= edge_attr_boundary
                            ))
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[s,s])
 edge_index = meshgenerator.ball_connectivity(radius_test)
 grid = meshgenerator.get_grid()
-# meshgenerator.get_boundary()
-# edge_index_boundary = meshgenerator.boundary_connectivity2d(stride = stride)
+meshgenerator.get_boundary()
+edge_index_boundary = meshgenerator.boundary_connectivity2d(stride = stride)
 data_test = []
 for j in range(ntest):
     edge_attr = meshgenerator.attributes(theta=test_a[j,:])
-    # edge_attr_boundary = meshgenerator.attributes_boundary(theta=test_a[j, :])
+    edge_attr_boundary = meshgenerator.attributes_boundary(theta=test_a[j, :])
     data_test.append(Data(x=torch.cat([grid, test_a[j,:].reshape(-1, 1),
-                                       # test_a_smooth[j,:].reshape(-1, 1), test_a_gradx[j,:].reshape(-1, 1), test_a_grady[j,:].reshape(-1, 1)
+                                       test_a_smooth[j,:].reshape(-1, 1), test_a_gradx[j,:].reshape(-1, 1), test_a_grady[j,:].reshape(-1, 1)
                                        ], dim=1),
                            y=test_u[j, :],
                            edge_index=edge_index, edge_attr=edge_attr,
-                           # edge_index_boundary=edge_index_boundary, edge_attr_boundary=edge_attr_boundary
+                           edge_index_boundary=edge_index_boundary, edge_attr_boundary=edge_attr_boundary
                           ))
 
 print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
-# print('edge_index_boundary', edge_index_boundary.shape, 'edge_attr', edge_attr_boundary.shape)
+print('edge_index_boundary', edge_index_boundary.shape, 'edge_attr', edge_attr_boundary.shape)
 
 train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(data_test, batch_size=batch_size2, shuffle=False)
@@ -185,7 +185,8 @@ t2 = default_timer()
 print('preprocessing finished, time used:', t2-t1)
 device = torch.device('cuda')
 
-model = KernelNN(width,ker_width,depth,edge_features,node_features).cuda()
+# model = KernelNN(width,ker_width,depth,edge_features,node_features).cuda()
+model = KernelNNBoundary(width,ker_width,depth,edge_features,node_features).cuda()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=5e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
 
