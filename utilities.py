@@ -83,11 +83,42 @@ class UnitGaussianNormalizer(object):
         x = x.view(s)
         return x
 
-    def decode(self, x):
+    def decode(self, x, sample_idx=None):
+        if sample_idx is None:
+            std = self.std + self.eps # n
+            mean = self.mean
+        else:
+            std = self.std[sample_idx]+ self.eps # batch * n
+            mean = self.mean[sample_idx]
+
         s = x.size()
         x = x.view(s[0], -1)
-        x = (x * (self.std + self.eps)) + self.mean
+        x = (x * std) + mean
         x = x.view(s)
+        return x
+
+    def cuda(self):
+        self.mean = self.mean.cuda()
+        self.std = self.std.cuda()
+
+    def cpu(self):
+        self.mean = self.mean.cpu()
+        self.std = self.std.cpu()
+
+class GaussianNormalizer(object):
+    def __init__(self, x, eps=0.00001):
+        super(GaussianNormalizer, self).__init__()
+
+        self.mean = torch.mean(x)
+        self.std = torch.std(x)
+        self.eps = eps
+
+    def encode(self, x):
+        x = (x - self.mean) / (self.std + self.eps)
+        return x
+
+    def decode(self, x, sample_idx=None):
+        x = (x * (self.std + self.eps)) + self.mean
         return x
 
     def cuda(self):
@@ -395,7 +426,6 @@ def downsample(data, grid_size, l):
     data = data[:, ::l, ::l]
     data = data.reshape(-1, (grid_size // l) ** 2)
     return data
-
 
 
 def grid(n_x, n_y):

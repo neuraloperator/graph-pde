@@ -19,8 +19,8 @@ class KernelNN(torch.nn.Module):
 
         self.fc1 = torch.nn.Linear(in_width, width)
 
-        kernel = DenseNet([ker_in, width//4, width], torch.nn.ReLU)
-        self.conv1 = NNConv(width, width, kernel, aggr='mean')
+        kernel = DenseNet([ker_in, 1000, 1000, width**2], torch.nn.ReLU)
+        self.conv1 = NNConv_old(width, width, kernel, aggr='mean')
 
         self.fc2 = torch.nn.Linear(width, 1)
 
@@ -34,16 +34,17 @@ class KernelNN(torch.nn.Module):
         return x
 
 class KernelNNBoundary(torch.nn.Module):
-    def __init__(self, width, depth, ker_in, in_width=1, out_width=1):
+    def __init__(self, width, ker_width, depth, ker_in, in_width=1, out_width=1):
         super(KernelNNBoundary, self).__init__()
         self.depth = depth
 
         self.fc1 = torch.nn.Linear(in_width, width)
+        self.fc3 = torch.nn.Linear(in_width, width)
 
-        kernel = DenseNet([ker_in, width//4, width], torch.nn.ReLU)
-        self.conv1 = NNConv(width, width, kernel, aggr='mean')
-        kernel2 = DenseNet([ker_in, width//4, width], torch.nn.ReLU)
-        self.conv2 = NNConv(width, width, kernel2, aggr='mean')
+        kernel = DenseNet([ker_in, ker_width, ker_width, width**2], torch.nn.ReLU)
+        self.conv1 = NNConv_old(width, width, kernel, aggr='mean')
+        kernel2 = DenseNet([ker_in, ker_width, ker_width, width**2], torch.nn.ReLU)
+        self.conv2 = NNConv_old(width, width, kernel2, aggr='mean')
 
         self.fc2 = torch.nn.Linear(width, 1)
 
@@ -53,7 +54,7 @@ class KernelNNBoundary(torch.nn.Module):
         x = self.fc1(x)
         for k in range(self.depth):
             x = self.conv1(x, edge_index, edge_attr) + self.conv2(x, edge_index_boundary, edge_attr_boundary)
-            x = F.relu(x)
+            x = F.relu(x) + self.fc1(data.x)
 
         x = self.fc2(x)
         return x
@@ -64,12 +65,13 @@ INIT_PATH = 'data/poisson_r121_f1.mat'
 
 
 ntrain = 100
-ntest = 10
-epochs = 50
-batch_size = 1
+ntest = 100
+
+batch_size = 5
 batch_size2 = 1
 width = 32
-depth = 4
+ker_width = 64
+depth = 6
 edge_features = 6
 
 r = 8
@@ -78,19 +80,20 @@ s = int(((121 - 1)/r) + 1)
 n = s**2
 m = 100
 k = 1
-radius_train = 0.15
-radius_test = 0.15
+radius_train = 0.1
+radius_test = 0.1
 stride = 3
 print('resolution', s)
 
+epochs = 20
 learning_rate = 0.001
 scheduler_step = 50
 scheduler_gamma = 0.8
 
 
-path_train_err = 'results/nik_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
-path_test_err = 'results/nik_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
-path_image = 'image/nik_r'+str(s)+'_n'+ str(ntrain)+''
+path_train_err = 'results/boundary_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
+path_test_err = 'results/boundary_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
+path_image = 'image/boundary_r'+str(s)+'_n'+ str(ntrain)+''
 
 
 
@@ -194,7 +197,7 @@ print('preprocessing finished, time used:', t2-t1)
 device = torch.device('cuda')
 
 # model = KernelNN(width,depth,edge_features,in_width=3).cuda()
-model = KernelNNBoundary(width,depth,edge_features,in_width=3).cuda()
+model = KernelNNBoundary(width,ker_width,depth,edge_features,in_width=3).cuda()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=5e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
 
@@ -232,8 +235,8 @@ for ep in range(epochs):
             test_l2 += myloss(y_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1)).item()
             # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
-    ttrain[ep] = train_l2/ train_l2/(ntrain * k)
-    ttest[ep] = train_l2 / test_l2/ntest
+    ttrain[ep] = train_l2/(ntrain * k)
+    ttest[ep] = test_l2/ntest
 
     print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
 
@@ -241,7 +244,7 @@ np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
 
 plt.figure()
-plt.plot(ttrain, label='train loss')
+# plt.plot(ttrain, label='train loss')
 plt.plot(ttest, label='test loss')
 plt.legend(loc='upper right')
 plt.show()
