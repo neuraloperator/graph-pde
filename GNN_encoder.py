@@ -12,39 +12,42 @@ from nn_conv import NNConv, NNConv_old
 from timeit import default_timer
 import scipy.io
 
+torch.manual_seed(1)
 
 
 
 
+r1 = 4
+s1 = 64//r1
+r2 = 16
+s2 = 64//r2
 
-r = 4
-s = 16
+s = s1
 n = s**2
-m = 100
-k = 1
 
-radius_train = 0.2
-radius_test = 0.2
+
+radius1 = 0.15
+radius2 = 0.25
 
 print('resolution', s)
 
 
 ntrain = 100
-ntest = 100
+ntest = 10
 
 batch_size = 1
 batch_size2 = 1
 width = 32
 ker_width = 64
 width_mid = 2
-depth = 3
+depth = 4
 edge_features = 4
-node_features = 3
+node_features = 1
 
 epochs = 20
-learning_rate = 0.001
-scheduler_step = 50
-scheduler_gamma = 0.8
+learning_rate = 0.0001
+scheduler_step = 20
+scheduler_gamma = 0.5
 
 
 
@@ -58,11 +61,8 @@ t1 = default_timer()
 
 
 
-Ntotal     = 48000
-num_train = 100
-num_test = 100
-num_data_per_batch = 64
-num_test = Ntotal-num_train
+Ntotal  = 48000
+
 
 X_TRAIN_FIELD = 'Energyfield'
 Y_TRAIN_FIELD = X_TRAIN_FIELD
@@ -74,21 +74,21 @@ data_loader = MatReader(TRAIN_PATH)
 data_input  = data_loader.read_field(X_TRAIN_FIELD).contiguous().view(Ntotal, -1)
 
 
-x_train  = data_input[:num_train,:]
-x_test   = data_input[num_test:,:]
+x_train  = data_input[:ntrain,:]
+x_test   = data_input[ntest:,:]
 x_normalizer = UnitGaussianNormalizer(x_train)
 x_train = x_normalizer.encode(x_train)
 x_test = x_normalizer.encode(x_test)
 
-x_train16 = x_train.view(-1,64,64)[:,::4,::4]
-x_train4 = x_train.view(-1,64,64)[:,::16,::16]
-x_test16 = x_test.view(-1,64,64)[:,::4,::4]
-x_test4 = x_test.view(-1,64,64)[:,::16,::16]
+x_train16 = x_train.view(-1,64,64)[:,::r1,::r1]
+x_train4 = x_train.view(-1,64,64)[:,::r2,::r2]
+x_test16 = x_test.view(-1,64,64)[:,::r1,::r1]
+x_test4 = x_test.view(-1,64,64)[:,::r2,::r2]
 
 
-meshgenerator1 = SquareMeshGenerator([[0,1],[0,1]],[s,s])
-meshgenerator2 = SquareMeshGenerator([[0,1],[0,1]],[s//4,s//4])
-meshgenerator3 = SquareMeshGenerator([[0,1],[0,1]],[s,s])
+meshgenerator1 = SquareMeshGenerator([[0,1],[0,1]],[s1,s1])
+meshgenerator2 = SquareMeshGenerator([[0,1],[0,1]],[s2,s2])
+meshgenerator3 = SquareMeshGenerator([[0,1],[0,1]],[s1,s1])
 
 grid1 = meshgenerator1.get_grid()
 grid2 = meshgenerator2.get_grid()
@@ -99,30 +99,30 @@ n_node3 = grid3.shape[0]
 
 grid = torch.cat([grid1, grid2, grid3], dim=0)
 
-edge_index_inner1 = meshgenerator1.ball_connectivity(radius_train)
-edge_index_inner2 = meshgenerator2.ball_connectivity(radius_train) #+ n_node1
-edge_index_inner3 = meshgenerator3.ball_connectivity(radius_train) #+ n_node1 + n_node2
+edge_index_inner1 = meshgenerator1.ball_connectivity(radius1)
+edge_index_inner2 = meshgenerator2.ball_connectivity(radius1) #+ n_node1
+edge_index_inner3 = meshgenerator3.ball_connectivity(radius1) #+ n_node1 + n_node2
 
 edge_attr_inner1 = meshgenerator1.attributes()
 edge_attr_inner2 = meshgenerator2.attributes()
 edge_attr_inner3 = meshgenerator3.attributes()
 
 pwd12 = sklearn.metrics.pairwise_distances(grid1, grid2)
-edge_index_inter12 = np.vstack(np.where(pwd12 <= radius_train))
-edge_index_inter12[:,1] += n_node1
-edge_attr_inter12 = grid[edge_index_inter12.T].reshape((-1,2))
+edge_index_inter12 = np.vstack(np.where(pwd12 <= radius2))
+edge_index_inter12[1,:] += n_node1
+edge_attr_inter12 = grid[edge_index_inter12.T].reshape((-1,4))
 
 edge_index_inter21 = edge_index_inter12[[1,0],:]
-edge_attr_inter21 = edge_attr_inter12[:,[1,0]]
+edge_attr_inter21 = edge_attr_inter12[:,[2,3,0,1]]
 
 pwd23 = sklearn.metrics.pairwise_distances(grid2, grid3)
-edge_index_inter23 = np.vstack(np.where(pwd23 <= radius_train))
-edge_index_inter23[:,0] += n_node1
-edge_index_inter23[:,1] += n_node1 + n_node2
-edge_attr_inter23 = grid[edge_index_inter23.T].reshape((-1,2))
+edge_index_inter23 = np.vstack(np.where(pwd23 <= radius2))
+edge_index_inter23[0,:] += n_node1
+edge_index_inter23[1,:] += n_node1 + n_node2
+edge_attr_inter23 = grid[edge_index_inter23.T].reshape((-1,4))
 
 edge_index_inter32 = edge_index_inter23[[1,0],:]
-edge_attr_inter32 = edge_attr_inter23[:,[1,0]]
+edge_attr_inter32 = edge_attr_inter23[:,[2,3,0,1]]
 
 edge_index_inter12 = torch.tensor(edge_index_inter12, dtype=torch.long)
 edge_index_inter21 = torch.tensor(edge_index_inter21, dtype=torch.long)
@@ -136,23 +136,15 @@ edge_attr_inter13 = torch.cat([edge_attr_inter21, edge_attr_inter23], dim=0)
 
 data_train = []
 for j in range(ntrain):
-    data_train.append(Data(x=torch.cat([grid[:n_node1], x_train16[j, :].reshape(-1, 1)], dim=1),
-                           y=x_train16[j,:],
-                           # edge_index_inner1=edge_index_inner1, edge_index_inner2=edge_index_inner2, edge_index_inner3=edge_index_inner3,
-                           # edge_index_inter12=edge_index_inter12, edge_index_inter23=edge_index_inter23,
-                           # edge_attr_inner1=edge_attr_inner1, edge_attr_inner2=edge_attr_inner2, edge_attr_inner3=edge_attr_inner3,
-                           # edge_attr_inter12=edge_attr_inter12, edge_attr_inter23=edge_attr_inter23,
+    data_train.append(Data(x=x_train16[j, :].reshape(-1,1),
+                           y=x_train16[j,:].reshape(-1,1),
                            ))
 
 data_test = []
 for j in range(ntrain):
     # X = torch.cat([x_test16[j, :].reshape(-1, 1), x_test4[j, :].reshape(-1, 1), x_test16[j, :].reshape(-1, 1)], dim=0)
-    data_test.append(Data(x=torch.cat([grid[:n_node1], x_test16[j, :].reshape(-1, 1)], dim=1),
-                           y=x_test16[j, :],
-                           # edge_index_inner1=edge_index_inner1, edge_index_inner2=edge_index_inner2, edge_index_inner3=edge_index_inner3,
-                           # edge_index_inter12=edge_index_inter12, edge_index_inter23=edge_index_inter23,
-                           # edge_attr_inner1=edge_attr_inner1, edge_attr_inner2=edge_attr_inner2, edge_attr_inner3=edge_attr_inner3,
-                           # edge_attr_inter12=edge_attr_inter12, edge_attr_inter23=edge_attr_inter23,
+    data_test.append(Data(x=x_test16[j, :].reshape(-1,1),
+                            y=x_test16[j, :].reshape(-1,1),
                            ))
 
 print('grid', grid.shape)
@@ -160,6 +152,8 @@ print('edge_index_inner1', edge_index_inner1.shape, 'edge_index_inner2', edge_in
 print('edge_attr_inner1', edge_attr_inner1.shape, 'edge_attr_inner2', edge_attr_inner2.shape, 'edge_attr_inner3', edge_attr_inner3.shape)
 print('edge_index_inter12', edge_index_inter12.shape, 'edge_index_inter23', edge_index_inter23.shape)
 print('edge_attr_inter12', edge_attr_inter12.shape, 'edge_attr_inter23', edge_attr_inter23.shape)
+print('edge_index_inter21', edge_index_inter21.shape, 'edge_index_inter32', edge_index_inter32.shape)
+print('edge_attr_inter21', edge_attr_inter21.shape, 'edge_attr_inter32', edge_attr_inter32.shape)
 
 train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(data_test, batch_size=batch_size2, shuffle=False)
@@ -219,19 +213,19 @@ class KernelNN(torch.nn.Module):
             x1 = F.relu(self.conv1(x1, edge_index_inner1, edge_attr_inner1))
             x_wide[:n_node1,:] = x1
 
-            x2 = x2 + F.relu(self.conv12(x_wide, edge_index_inter12, edge_attr_inter12))[n_node1:n_node1+n_node2,:]
-            x2 = F.relu(self.conv2(x2, edge_index_inner2, edge_attr_inner2))
+            x2 = x2 + F.relu(self.conv12(x_wide.clone(), edge_index_inter12, edge_attr_inter12))[n_node1:n_node1+n_node2,:]
+            # x2 = F.relu(self.conv2(x2, edge_index_inner2, edge_attr_inner2))
             x_narrow[n_node1:n_node1+n_node2, :] = x2
 
-            x3 = x3 + F.relu(self.conv23(x_narrow, edge_index_inter23, edge_attr_inter23))[n_node1+n_node2:,:]
+            x3 = x3 + F.relu(self.conv23(x_narrow.clone(), edge_index_inter23, edge_attr_inter23))[n_node1+n_node2:,:]
             x3 = F.relu(self.conv3(x3, edge_index_inner3, edge_attr_inner3))
             x_wide[n_node1 + n_node2:, :] = x3
 
-            x2 = x2 + F.relu(self.conv32(x_wide, edge_index_inter32, edge_attr_inter32))[n_node1:n_node1+n_node2,:]
-            x2 = F.relu(self.conv2(x2, edge_index_inner2, edge_attr_inner2))
+            x2 = x2 + F.relu(self.conv32(x_wide.clone(), edge_index_inter32, edge_attr_inter32))[n_node1:n_node1+n_node2,:]
+            # x2 = F.relu(self.conv2(x2, edge_index_inner2, edge_attr_inner2))
             x_narrow[n_node1:n_node1 + n_node2, :] = x2
 
-            x1 = x1 + F.relu(self.conv21(x_narrow, edge_index_inter21, edge_attr_inter21))[:n_node1,:]
+            x1 = x1 + F.relu(self.conv21(x_narrow.clone(), edge_index_inter21, edge_attr_inter21))[:n_node1,:]
 
         x = self.fc2(x3)
         return x
@@ -288,7 +282,7 @@ for ep in range(epochs):
         for batch in test_loader:
             batch = batch.to(device)
             out = model(batch)
-            test_mse += F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
+            test_mse += F.mse_loss(out.view(-1, 1), batch.y.view(-1,1)).item()
             # test_l2 += myloss(u_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1)).item()
             # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
@@ -309,28 +303,29 @@ np.savetxt(path_test_err, ttest)
 
 
 plt.figure()
-# plt.plot(ttrain, label='train loss')
+plt.plot(ttrain, label='train loss')
 plt.plot(ttest, label='test loss')
 plt.legend(loc='upper right')
 plt.show()
 
 
 resolution = s
-data = train_loader.dataset[0]
+data = train_loader.dataset[0].to(device)
 truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-model.cpu()
-approx = model(data).detach().numpy().reshape((resolution, resolution))
+approx = model(data).detach().cpu().numpy().reshape((resolution, resolution))
+_min = np.min(np.min(truth))
+_max = np.max(np.max(truth))
 
 # plt.figure()
 plt.subplot(3, 3, 4)
-plt.imshow(truth)
+plt.imshow(truth, vmin = _min, vmax=_max)
 plt.xticks([], [])
 plt.yticks([], [])
 plt.colorbar(fraction=0.046, pad=0.04)
 plt.title('Ground Truth')
 
 plt.subplot(3, 3, 5)
-plt.imshow(approx)
+plt.imshow(approx, vmin = _min, vmax=_max)
 plt.xticks([], [])
 plt.yticks([], [])
 plt.colorbar(fraction=0.046, pad=0.04)
@@ -350,21 +345,21 @@ plt.savefig(path_image + '_train.png')
 
 
 
-data = test_loader.dataset[0]
+data = test_loader.dataset[0].to(device)
 truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-model.cpu()
-approx = model(data).detach().numpy().reshape((resolution, resolution))
+approx = model(data).detach().cpu().numpy().reshape((resolution, resolution))
 
 # plt.figure()
 plt.subplot(3, 3, 7)
-plt.imshow(truth)
+
+plt.imshow(truth, vmin = _min, vmax=_max)
 plt.xticks([], [])
 plt.yticks([], [])
 plt.colorbar(fraction=0.046, pad=0.04)
 plt.title('Ground Truth')
 
 plt.subplot(3, 3, 8)
-plt.imshow(approx)
+plt.imshow(approx, vmin = _min, vmax=_max)
 plt.xticks([], [])
 plt.yticks([], [])
 plt.colorbar(fraction=0.046, pad=0.04)
