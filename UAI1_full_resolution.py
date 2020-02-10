@@ -50,17 +50,17 @@ print('resolution', s)
 
 
 ntrain = 100
-ntest = 100
+ntest = 40
 
 batch_size = 10
 batch_size2 = 2
 width = 64
-ker_width = 1000
+ker_width = 1024
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 2
+epochs = 200
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.8
@@ -273,24 +273,23 @@ for ep in range(epochs):
     t2 = default_timer()
 
     model.eval()
-    test_l2_16 = 0.0
-    test_l2_31 = 0.0
-    test_l2_61 = 0.0
+
 
     ttrain[ep] = train_l2/(ntrain * k)
-    ttest16[ep] = test_l2_16 / ntest
-    ttest31[ep] = test_l2_31 / ntest
-    ttest61[ep] = test_l2_61 / ntest
 
     print(ep, ' time:', t2-t1, ' train_mse:', train_mse/len(train_loader))
 
 t1 = default_timer()
 u_normalizer.cpu()
 model = model.cpu()
+test_l2_16 = 0.0
+test_l2_31 = 0.0
+test_l2_61 = 0.0
 with torch.no_grad():
     for batch in test_loader16:
         out = model(batch)
-        test_l2_16 += myloss(u_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1))
+        test_l2_16 += myloss(u_normalizer.decode(out.view(batch_size2,-1)),
+                             batch.y.view(batch_size2, -1))
     for batch in test_loader31:
         out = model(batch)
         test_l2_31 += myloss(u_normalizer.decode(out.view(batch_size2, -1)),
@@ -320,20 +319,12 @@ np.savetxt(path_test_err61 + '.txt', ttest61)
 ##################################################################################################
 
 
-plt.figure()
-# plt.plot(ttrain, label='train loss')
-plt.plot(ttest16, label='test16 loss')
-plt.plot(ttest31, label='test31 loss')
-plt.plot(ttest61, label='test61 loss')
-plt.legend(loc='upper right')
-plt.show()
-
 
 resolution = s
-data = train_loader.dataset[0].to(device)
-coeff = data.coeff.detach().cpu().numpy().reshape((resolution, resolution))
-truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-approx = model(data).detach().cpu().numpy().reshape((resolution, resolution))
+data = train_loader.dataset[0]
+coeff = data.coeff.numpy().reshape((resolution, resolution))
+truth = u_normalizer.decode(data.y.reshape(1,-1)).numpy().reshape((resolution, resolution))
+approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().numpy().reshape((resolution, resolution))
 _min = np.min(np.min(truth))
 _max = np.max(np.max(truth))
 
@@ -364,10 +355,10 @@ plt.savefig(path_image_train + '.png')
 
 
 resolution = 16
-data = test_loader16.dataset[0].to(device)
-coeff = data.coeff.detach().cpu().numpy().reshape((resolution, resolution))
-truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-approx = model(data).detach().cpu().numpy().reshape((resolution, resolution))
+data = test_loader16.dataset[0]
+coeff = data.coeff.numpy().reshape((resolution, resolution))
+truth = data.y.numpy().reshape((resolution, resolution))
+approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().numpy().reshape((resolution, resolution))
 _min = np.min(np.min(truth))
 _max = np.max(np.max(truth))
 
@@ -397,10 +388,10 @@ plt.subplots_adjust(wspace=0.5, hspace=0.5)
 plt.savefig(path_image_test16 + '.png')
 
 resolution = 31
-data = test_loader31.dataset[0].to(device)
-coeff = data.coeff.detach().cpu().numpy().reshape((resolution, resolution))
-truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().cpu().numpy().reshape((resolution, resolution))
+data = test_loader31.dataset[0]
+coeff = data.coeff.numpy().reshape((resolution, resolution))
+truth = data.y.numpy().reshape((resolution, resolution))
+approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().numpy().reshape((resolution, resolution))
 _min = np.min(np.min(truth))
 _max = np.max(np.max(truth))
 
@@ -432,10 +423,10 @@ plt.savefig(path_image_test31 + '.png')
 
 
 resolution = 61
-data = test_loader61.dataset[0].to(device)
-coeff = data.coeff.detach().cpu().numpy().reshape((resolution, resolution))
-truth = data.y.detach().cpu().numpy().reshape((resolution, resolution))
-approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().cpu().numpy().reshape((resolution, resolution))
+data = test_loader61.dataset[0]
+coeff = data.coeff.numpy().reshape((resolution, resolution))
+truth = data.y.numpy().reshape((resolution, resolution))
+approx = u_normalizer.decode(model(data).reshape(1,-1)).detach().numpy().reshape((resolution, resolution))
 _min = np.min(np.min(truth))
 _max = np.max(np.max(truth))
 
