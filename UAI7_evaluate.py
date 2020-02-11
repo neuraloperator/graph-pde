@@ -51,7 +51,7 @@ print('resolution', s)
 
 
 ntrain = 100
-ntest = 100
+ntest = 10
 
 batch_size = 4
 batch_size2 = 4 # must be a factor of num of samples
@@ -61,15 +61,15 @@ depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 100
+epochs = 20
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
 
 
-testr1 = 4
-tests1 = int(((241 - 1)/r) + 1) ##61
-test_split = 4 ##16
+testr1 = 1
+tests1 = int(((241 - 1)/testr1) + 1) ##241
+test_split = 16 ##16
 testn1 = s**2
 path_train_err = 'results/UAI7_r'+str(s)+'train.txt'
 path_test_err = 'results/UAI7_r'+str(s)+'_s'+ str(tests1)+'test.txt'
@@ -127,6 +127,9 @@ for j in range(ntrain):
                                y=train_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
                                ))
 
+print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
+# print('edge_index_boundary', edge_index_boundary.shape, 'edge_attr', edge_attr_boundary.shape)
+
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[tests1,tests1])
 grid = meshgenerator.get_grid()
@@ -142,8 +145,7 @@ for j in range(ntest):
     data_test.append(equation_loader)
 
 
-print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
-# print('edge_index_boundary', edge_index_boundary.shape, 'edge_attr', edge_attr_boundary.shape)
+
 
 train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 
@@ -167,7 +169,7 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step,
 
 myloss = LpLoss(size_average=False)
 u_normalizer.cuda()
-gridsplitter.cuda()
+# gridsplitter.cuda()
 
 model.train()
 ttrain = np.zeros((epochs, ))
@@ -198,26 +200,31 @@ for ep in range(epochs):
 
     model.eval()
     test_l2 = 0.0
-    with torch.no_grad():
-        for i, equation_loader in enumerate(data_test):
-            pred = []
-            for batch in equation_loader:
-                batch = batch.to(device)
-                out = model(batch)
-                pred.append(out)
-
-            out = gridsplitter.assemble(pred)
-            y = test_u[i].to(device)
-            test_l2 += myloss(u_normalizer.decode(out.view(1,-1)), y.view(1, -1)).item()
-
-    ttrain[ep] = train_mse/len(train_loader)
-    ttest[ep] = test_l2/ntest
 
     print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
 
 np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
 
+with torch.no_grad():
+    for i, equation_loader in enumerate(data_test):
+        pred = []
+        split_idx = []
+        for batch in equation_loader:
+            batch = batch.to(device)
+            out = model(batch)
+            pred.append(out)
+            split_idx.append(batch.split_idx.tolist())
+
+        out = gridsplitter.assemble(pred, split_idx, batch_size2)
+        y = test_u[i]
+        test_l2 += myloss(u_normalizer.decode(out.view(1, -1)), y.view(1, -1)).item()
+
+t3 = default_timer()
+print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
+
+ttrain[ep] = train_mse / len(train_loader)
+ttest[ep] = test_l2 / ntest
 
 ##################################################################################################
 
@@ -232,3 +239,34 @@ plt.plot(ttest, label='test loss')
 plt.legend(loc='upper right')
 plt.show()
 
+resolution = tests1
+
+truth = test_u[i].numpy().reshape((resolution, resolution))
+approx = u_normalizer.decode(out.view(1,-1)).detach().numpy().reshape((resolution, resolution))
+_min = np.min(np.min(truth))
+_max = np.max(np.max(truth))
+
+plt.figure()
+plt.subplot(1, 3, 1)
+plt.imshow(truth, vmin = _min, vmax=_max)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Ground Truth')
+
+plt.subplot(1, 3, 2)
+plt.imshow(approx, vmin = _min, vmax=_max)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Approximation')
+
+plt.subplot(1, 3, 3)
+plt.imshow((approx - truth) ** 2)
+plt.xticks([], [])
+plt.yticks([], [])
+plt.colorbar(fraction=0.046, pad=0.04)
+plt.title('Error')
+
+plt.subplots_adjust(wspace=0.5, hspace=0.5)
+plt.show()

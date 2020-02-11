@@ -435,51 +435,64 @@ class LargeGridSplitter(object):
         self.radius = radius
 
     def get_data(self, theta):
+        theta_d = theta.shape[1]
+        theta = theta.reshape(self.resolution, self.resolution, theta_d)
         data = []
         for x in range(self.r):
             for y in range(self.r):
-                grid_sub = self.grid[x::self.r, y::self.r,:].reshape(self.n,-1)
-                theta_sub = theta[x::self.r, y::self.r,:].reshape(self.n,-1)
+                grid_sub = self.grid[x::self.r, y::self.r,:].reshape(-1,2)
+                theta_sub = theta[x::self.r, y::self.r,:].reshape(-1,theta_d)
 
                 perm = torch.randperm(self.n)
                 idx = perm[:self.m]
                 grid_sample = self.grid.reshape(self.n,-1)[idx]
                 theta_sample = theta.reshape(self.n,-1)[idx]
 
-                grid = torch.cat([grid_sub, grid_sample],dim=0)
-                theta = torch.cat([theta_sub, theta_sample],dim=0)
-                X = torch.cat([grid,theta],dim=1)
+                grid_split = torch.cat([grid_sub, grid_sample],dim=0)
+                theta_split = torch.cat([theta_sub, theta_sample],dim=0)
+                X = torch.cat([grid_split,theta_split],dim=1)
 
-                pwd = sklearn.metrics.pairwise_distances(grid)
+                pwd = sklearn.metrics.pairwise_distances(grid_split)
                 edge_index = np.vstack(np.where(pwd <= self.radius))
                 n_edges = edge_index.shape[1]
                 edge_index = torch.tensor(edge_index, dtype=torch.long)
 
                 edge_attr = np.zeros((n_edges, 6))
-                a = theta[:,0]
-                edge_attr[:, :4] = grid[edge_index.T].reshape(n_edges, -1)
+                a = theta_split[:,0]
+                edge_attr[:, :4] = grid_split[edge_index.T].reshape(n_edges, -1)
                 edge_attr[:, 4] = a[edge_index[0]]
                 edge_attr[:, 5] = a[edge_index[1]]
                 edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=[x,y]))
+                split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
+                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
 
-    def assemble(self, pred, split_idx):
+
+        return data
+
+    def assemble(self, pred, split_idx, batch_size2):
         assert len(pred) == len(split_idx)
-        assert len(pred) == self.s**2
+        assert len(pred) == self.r**2 // batch_size2
 
-        out = np.zeros((self.resolution,self.resolution))
+        out = torch.zeros((self.resolution,self.resolution))
         for i in range(len(pred)):
-            x, y = split_idx[i]
-            if x==0:
-                nx = self.r+1
-            else:
-                nx = self.r
-            if y==0:
-                ny = self.r+1
-            else:
-                ny = self.r
-            pred_i = pred[i].reshape(nx,ny)
-            out[x::self.r, y::self.r] = pred_i
+            pred_i = pred[i]
+            split_idx_i = split_idx[i]
+            idx = 0
+            for j in range(batch_size2):
+                x, y = split_idx_i[j]
+                if x==0:
+                    nx = self.s
+                else:
+                    nx = self.s-1
+                if y==0:
+                    ny = self.s
+                else:
+                    ny = self.s-1
+                pred_ij = pred_i[idx : idx + nx * ny]
+                out[x::self.r, y::self.r] = pred_ij.reshape(nx,ny)
+                idx = idx + nx * ny + self.m
+
+            assert idx == pred_i.shape[0]
 
         return out.reshape(-1,)
 
