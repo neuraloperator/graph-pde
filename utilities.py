@@ -3,7 +3,7 @@ import numpy as np
 import scipy.io
 import h5py
 import sklearn.metrics
-
+from torch_geometric.data import Data
 import torch.nn as nn
 
 #################################################
@@ -136,7 +136,7 @@ class RangeNormalizer(object):
         mymax = torch.max(x, 0)[0].view(-1)
 
         self.a = (high - low)/(mymax - mymin)
-        self.b = -a*mymax + high
+        self.b = -self.a*mymax + high
 
     def encode(self, x):
         s = x.size()
@@ -168,7 +168,7 @@ class LpLoss(object):
         num_examples = x.size()[0]
 
         #Assume uniform mesh
-        h = 1.0 / (x_size.size()[1] - 1.0)
+        h = 1.0 / (x.size()[1] - 1.0)
 
         all_norms = (h**(self.d/self.p))*torch.norm(x.view(num_examples,-1) - y.view(num_examples,-1), self.p, 1)
 
@@ -379,6 +379,7 @@ class RandomMeshGenerator(object):
 
         return torch.tensor(edge_attr, dtype=torch.float)
 
+
     # def get_boundary(self):
     #     s = self.s
     #     n = self.n
@@ -419,6 +420,76 @@ class RandomMeshGenerator(object):
     #
     #     return torch.tensor(edge_attr_boundary, dtype=torch.float)
 
+class LargeGridSplitter(object):
+    def __init__(self, grid, resolution, r, m=100, radius=0.15):
+        super(LargeGridSplitter, self).__init__()
+
+        self.grid = grid.reshape(resolution, resolution,2)
+        # self.theta = theta.reshape(resolution, resolution,-1)
+        # self.y = y.reshape(resolution, resolution,1)
+        self.resolution = resolution
+        self.s = int(((resolution - 1)/r) + 1)
+        self.r = r
+        self.n = resolution**2
+        self.m = m
+        self.radius = radius
+
+    def get_data(self, theta):
+        data = []
+        for x in range(self.r):
+            for y in range(self.r):
+                grid_sub = self.grid[x::self.r, y::self.r,:].reshape(self.n,-1)
+                theta_sub = theta[x::self.r, y::self.r,:].reshape(self.n,-1)
+
+                perm = torch.randperm(self.n)
+                idx = perm[:self.m]
+                grid_sample = self.grid.reshape(self.n,-1)[idx]
+                theta_sample = theta.reshape(self.n,-1)[idx]
+
+                grid = torch.cat([grid_sub, grid_sample],dim=0)
+                theta = torch.cat([theta_sub, theta_sample],dim=0)
+                X = torch.cat([grid,theta],dim=1)
+
+                pwd = sklearn.metrics.pairwise_distances(grid)
+                edge_index = np.vstack(np.where(pwd <= self.radius))
+                n_edges = edge_index.shape[1]
+                edge_index = torch.tensor(edge_index, dtype=torch.long)
+
+                edge_attr = np.zeros((n_edges, 6))
+                a = theta[:,0]
+                edge_attr[:, :4] = grid[edge_index.T].reshape(n_edges, -1)
+                edge_attr[:, 4] = a[edge_index[0]]
+                edge_attr[:, 5] = a[edge_index[1]]
+                edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=[x,y]))
+
+    def assemble(self, pred, split_idx):
+        assert len(pred) == len(split_idx)
+        assert len(pred) == self.s**2
+
+        out = np.zeros((self.resolution,self.resolution))
+        for i in range(len(pred)):
+            x, y = split_idx[i]
+            if x==0:
+                nx = self.r+1
+            else:
+                nx = self.r
+            if y==0:
+                ny = self.r+1
+            else:
+                ny = self.r
+            pred_i = pred[i].reshape(nx,ny)
+            out[x::self.r, y::self.r] = pred_i
+
+        return out.reshape(-1,)
+
+    def cuda(self):
+        self.s = self.s.cuda()
+        self.r = self.r.cuda()
+
+    def cpu(self):
+        self.s = self.s.cpu()
+        self.r = self.r.cpu()
 
 
 def downsample(data, grid_size, l):
