@@ -62,8 +62,8 @@ radius_test = 0.15
 print('resolution', s)
 
 
-batch_size = 2
-batch_size2 = 2
+batch_size = 4
+batch_size2 = 4
 width = 64
 ker_width = 1024
 depth = 6

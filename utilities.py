@@ -544,6 +544,7 @@ class LargeGridSplitter(object):
                 out[x::self.r, y::self.r] = pred_ij[:nx * ny].reshape(nx,ny)
 
         out = gaussian_filter(out, sigma=sigma, mode='constant', cval=0)
+        out = torch.tensor(out, dtype=torch.float)
         return out.reshape(-1,)
 
 
