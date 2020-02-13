@@ -40,18 +40,19 @@ TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
 ntrain = 100
-ntest = 10
+ntest = 2
 
-r = 1
+r = 16
 s = int(((241 - 1)/r) + 1)
 n = s**2
 m = 100
 k = 2
-trainm = 300
+trainm = 200
+train_split = 1
 
-testr1 = r
+testr1 = 1
 tests1 = int(((241 - 1)/testr1) + 1) ##241
-split = 16 ##16
+test_split = 16 ##16
 testn1 = s**2
 testm = 300
 
@@ -61,15 +62,15 @@ radius_test = 0.15
 print('resolution', s)
 
 
-batch_size = 8
-batch_size2 = 8
+batch_size = 2
+batch_size2 = 2
 width = 64
 ker_width = 1024
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 200
+epochs = 10
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
@@ -119,7 +120,7 @@ train_u = u_normalizer.encode(train_u)
 
 meshgenerator = SquareMeshGenerator([[0, 1], [0, 1]], [s, s])
 grid = meshgenerator.get_grid()
-gridsplitter = LargeGridSplitter(grid, resolution=s, r=split, m=trainm, radius=radius_test)
+gridsplitter = LargeGridSplitter(grid, resolution=s, r=train_split, m=trainm, radius=radius_test)
 data_train = []
 for j in range(ntrain):
     for i in range(k):
@@ -137,7 +138,7 @@ train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[tests1,tests1])
 grid = meshgenerator.get_grid()
-gridsplitter = LargeGridSplitter(grid, resolution=tests1, r=split, m=testm, radius=radius_test)
+gridsplitter = LargeGridSplitter(grid, resolution=tests1, r=test_split, m=testm, radius=radius_test)
 
 data_test = []
 for j in range(ntest):

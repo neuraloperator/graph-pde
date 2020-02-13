@@ -466,8 +466,9 @@ class LargeGridSplitter(object):
                 edge_attr[:, 5] = a[edge_index[1]]
                 edge_attr = torch.tensor(edge_attr, dtype=torch.float)
                 split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
-                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
 
+                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
+        print('test', X.shape, edge_index.shape, edge_attr.shape)
         return data
 
     def sample(self, theta, Y):
@@ -478,23 +479,28 @@ class LargeGridSplitter(object):
         x = torch.randint(0,self.r,(1,))
         y = torch.randint(0,self.r,(1,))
 
-
         grid_sub = self.grid[x::self.r, y::self.r, :].reshape(-1, 2)
         theta_sub = theta[x::self.r, y::self.r, :].reshape(-1, theta_d)
         Y_sub = Y[x::self.r, y::self.r].reshape(-1, )
 
-        perm = torch.randperm(self.n)
+        if self.m >= self.n:
+            m = self.m - self.n
+            perm = torch.randperm(self.n)
+            idx = perm[:m]
+            grid_sample = self.grid.reshape(self.n, -1)[idx]
+            theta_sample = theta.reshape(self.n, -1)[idx]
+            Y_sample = Y.reshape(self.n, )[idx]
 
-        m = self.m - Y_sub.shape[0]
-        idx = perm[:m]
-        grid_sample = self.grid.reshape(self.n, -1)[idx]
-        theta_sample = theta.reshape(self.n, -1)[idx]
-        Y_sample = Y.reshape(self.n, )[idx]
+            grid_split = torch.cat([grid_sub, grid_sample], dim=0)
+            theta_split = torch.cat([theta_sub, theta_sample], dim=0)
+            Y_split = torch.cat([Y_sub, Y_sample], dim=0).reshape(-1,)
+            X = torch.cat([grid_split, theta_split], dim=1)
 
-        grid_split = torch.cat([grid_sub, grid_sample], dim=0)
-        theta_split = torch.cat([theta_sub, theta_sample], dim=0)
-        Y_split = torch.cat([Y_sub, Y_sample], dim=0)
-        X = torch.cat([grid_split, theta_split], dim=1)
+        else:
+            grid_split = grid_sub
+            theta_split = theta_sub
+            Y_split = Y_sub.reshape(-1,)
+            X = torch.cat([grid_split, theta_split], dim=1)
 
 
         pwd = sklearn.metrics.pairwise_distances(grid_split)
@@ -510,7 +516,7 @@ class LargeGridSplitter(object):
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
         split_idx = torch.tensor([x, y], dtype=torch.long).reshape(1, 2)
         data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx)
-        print(X.shape, Y.shape, edge_index.shape, edge_attr.shape)
+        print('train', X.shape, Y.shape, edge_index.shape, edge_attr.shape)
 
         return data
 
