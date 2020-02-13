@@ -82,7 +82,7 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for k in (2,4,8):
+for k in (1,):
     for ntrain in (10,100,1000):
         r = 2
         s = int(((241 - 1)/r) + 1)

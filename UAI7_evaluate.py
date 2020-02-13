@@ -28,7 +28,9 @@ class KernelNN(torch.nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         x = self.fc1(x)
         for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
+            x = self.conv1(x, edge_index, edge_attr)
+            if k != self.depth-1:
+                x = F.relu(x)
 
         x = self.fc2(x)
         return x
@@ -37,12 +39,21 @@ class KernelNN(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-r = 2
+ntrain = 100
+ntest = 10
+
+r = 1
 s = int(((241 - 1)/r) + 1)
 n = s**2
-m = 200
+m = 100
 k = 2
-testm = 100
+trainm = 300
+
+testr1 = r
+tests1 = int(((241 - 1)/testr1) + 1) ##241
+split = 16 ##16
+testn1 = s**2
+testm = 300
 
 radius_train = 0.15
 radius_test = 0.15
@@ -50,30 +61,24 @@ radius_test = 0.15
 print('resolution', s)
 
 
-ntrain = 100
-ntest = 10
-
-batch_size = 4
-batch_size2 = 4 # must be a factor of num of samples
+batch_size = 8
+batch_size2 = 8
 width = 64
 ker_width = 1024
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 20
+epochs = 200
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
 
 
-testr1 = 1
-tests1 = int(((241 - 1)/testr1) + 1) ##241
-test_split = 16 ##16
-testn1 = s**2
-path_train_err = 'results/UAI7_r'+str(s)+'train.txt'
-path_test_err = 'results/UAI7_r'+str(s)+'_s'+ str(tests1)+'test.txt'
-path_image = 'image/UAI7_r'+str(s)+'_s'+ str(tests1)
+
+path_train_err = 'results/UAI7_new_r'+str(s)+'testm'+str(testm)+'train.txt'
+path_test_err = 'results/UAI7_new_r'+str(s)+'_s'+ str(tests1)+'testm'+str(testm)+'test.txt'
+path_image = 'image/UAI7_new_r'+str(s)+'_s'+ str(tests1)+'testm'+str(testm)
 
 
 t1 = default_timer()
@@ -112,32 +117,31 @@ train_u = u_normalizer.encode(train_u)
 # test_u = y_normalizer.encode(test_u)
 
 
-meshgenerator = RandomMeshGenerator([[0, 1], [0, 1]], [s, s], sample_size=m)
+meshgenerator = SquareMeshGenerator([[0, 1], [0, 1]], [s, s])
+grid = meshgenerator.get_grid()
+gridsplitter = LargeGridSplitter(grid, resolution=s, r=split, m=trainm, radius=radius_test)
 data_train = []
 for j in range(ntrain):
     for i in range(k):
-        idx = meshgenerator.sample()
-        grid = meshgenerator.get_grid()
-        edge_index = meshgenerator.ball_connectivity(radius_train)
-        edge_attr = meshgenerator.attributes(theta=train_a[j, :])
-        data_train.append(Data(x=torch.cat([grid, train_a[j, idx].reshape(-1, 1),
-                                            train_a_smooth[j, idx].reshape(-1, 1), train_a_gradx[j, idx].reshape(-1, 1),
-                                            train_a_grady[j, idx].reshape(-1, 1)
-                                            ], dim=1),
-                               y=train_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
-                               ))
+        theta = torch.cat([train_a[j, :].reshape(-1, 1),
+                               train_a_smooth[j, :].reshape(-1, 1), train_a_gradx[j, :].reshape(-1, 1),
+                               train_a_grady[j, :].reshape(-1, 1)
+                               ], dim=1)
+        y = train_u[j,:].reshape(-1, 1)
+        data_train.append(gridsplitter.sample(theta, y))
 
-print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
+train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
+# print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
 # print('edge_index_boundary', edge_index_boundary.shape, 'edge_attr', edge_attr_boundary.shape)
 
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[tests1,tests1])
 grid = meshgenerator.get_grid()
-gridsplitter = LargeGridSplitter( grid, resolution=tests1, r=test_split, m=testm, radius=radius_test)
+gridsplitter = LargeGridSplitter(grid, resolution=tests1, r=split, m=testm, radius=radius_test)
 
 data_test = []
 for j in range(ntest):
-    theta = x=torch.cat([test_a[j,:].reshape(-1, 1),
+    theta =torch.cat([test_a[j,:].reshape(-1, 1),
                                        test_a_smooth[j,:].reshape(-1, 1), test_a_gradx[j,:].reshape(-1, 1), test_a_grady[j,:].reshape(-1, 1)
                                        ], dim=1)
     data_equation = gridsplitter.get_data(theta)
@@ -147,7 +151,7 @@ for j in range(ntest):
 
 
 
-train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
+
 
 
 
@@ -220,11 +224,47 @@ with torch.no_grad():
         y = test_u[i]
         test_l2 += myloss(u_normalizer.decode(out.view(1, -1)), y.view(1, -1)).item()
 
+        resolution = tests1
+        truth = test_u[i].numpy().reshape((resolution, resolution))
+        approx = u_normalizer.decode(out.view(1, -1)).detach().numpy().reshape((resolution, resolution))
+        _min = np.min(np.min(truth))
+        _max = np.max(np.max(truth))
+
+        plt.figure()
+        plt.subplot(1, 3, 1)
+        plt.imshow(truth, vmin=_min, vmax=_max)
+        plt.xticks([], [])
+        plt.yticks([], [])
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title('Ground Truth')
+
+        plt.subplot(1, 3, 2)
+        plt.imshow(approx, vmin=_min, vmax=_max)
+        plt.xticks([], [])
+        plt.yticks([], [])
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title('Approximation')
+
+        plt.subplot(1, 3, 3)
+        plt.imshow((approx - truth) ** 2)
+        plt.xticks([], [])
+        plt.yticks([], [])
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title('Error')
+
+        plt.subplots_adjust(wspace=0.5, hspace=0.5)
+        plt.savefig(path_image + str(i) + '.png')
+        plt.show()
+
+
 t3 = default_timer()
-print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
+print(ep, t3-t2, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
 
 ttrain[ep] = train_mse / len(train_loader)
 ttest[ep] = test_l2 / ntest
+
+np.savetxt(path_train_err, ttrain)
+np.savetxt(path_test_err, ttest)
 
 ##################################################################################################
 
@@ -233,40 +273,13 @@ ttest[ep] = test_l2 / ntest
 ##################################################################################################
 
 
+
 plt.figure()
 # plt.plot(ttrain, label='train loss')
 plt.plot(ttest, label='test loss')
 plt.legend(loc='upper right')
 plt.show()
 
-resolution = tests1
 
-truth = test_u[i].numpy().reshape((resolution, resolution))
-approx = u_normalizer.decode(out.view(1,-1)).detach().numpy().reshape((resolution, resolution))
-_min = np.min(np.min(truth))
-_max = np.max(np.max(truth))
 
-plt.figure()
-plt.subplot(1, 3, 1)
-plt.imshow(truth, vmin = _min, vmax=_max)
-plt.xticks([], [])
-plt.yticks([], [])
-plt.colorbar(fraction=0.046, pad=0.04)
-plt.title('Ground Truth')
 
-plt.subplot(1, 3, 2)
-plt.imshow(approx, vmin = _min, vmax=_max)
-plt.xticks([], [])
-plt.yticks([], [])
-plt.colorbar(fraction=0.046, pad=0.04)
-plt.title('Approximation')
-
-plt.subplot(1, 3, 3)
-plt.imshow((approx - truth) ** 2)
-plt.xticks([], [])
-plt.yticks([], [])
-plt.colorbar(fraction=0.046, pad=0.04)
-plt.title('Error')
-
-plt.subplots_adjust(wspace=0.5, hspace=0.5)
-plt.show()

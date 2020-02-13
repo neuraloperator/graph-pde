@@ -47,26 +47,26 @@ radius_test = 0.10
 print('resolution', s)
 
 
-ntrain = 1000
+ntrain = 100
 ntest = 100
 
-batch_size = 4
-batch_size2 = 4
+batch_size = 2
+batch_size2 = 2
 width = 64
 ker_width = 1024
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 200
+epochs = 500
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
 
 
-path_train_err = 'results/UAI2_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
-path_test_err = 'results/UAI2_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
-path_image = 'image/UAI2_r'+str(s)+'_n'+ str(ntrain)+''
+path_train_err = 'results/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
+path_test_err = 'results/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
+path_image = 'image/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+''
 
 
 t1 = default_timer()
@@ -195,15 +195,16 @@ for ep in range(epochs):
 
     model.eval()
     test_l2 = 0.0
-    with torch.no_grad():
-        for batch in test_loader:
-            batch = batch.to(device)
-            out = model(batch)
-            test_l2 += myloss(u_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1)).item()
-            # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
+    if ep%100==99:
+        with torch.no_grad():
+            for batch in test_loader:
+                batch = batch.to(device)
+                out = model(batch)
+                test_l2 += myloss(u_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1)).item()
+                # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
-    ttrain[ep] = train_mse/len(train_loader)
-    ttest[ep] = test_l2/ntest
+        ttrain[ep] = train_mse/len(train_loader)
+        ttest[ep] = test_l2/ntest
 
     print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
 

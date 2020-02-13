@@ -38,8 +38,8 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for m in (100,200,400):
-    for radius_train in (0.05,0.15,0.4):
+for m in (100, 200, 400):
+    for radius_train in (0.05, 0.15, 0.4):
         r = 2
         s = int(((241 - 1)/r) + 1)
         n = s**2
@@ -54,15 +54,17 @@ for m in (100,200,400):
         ntrain = 100
         ntest = 100
 
+        batch_size = 10
+        batch_size2 = 10
+
         if radius_train == 0.4 and m==400:
             batch_size = 2
             batch_size2 = 2
         if radius_train == 0.4 and m == 200:
             batch_size = 5
             batch_size2 = 5
-        else:
-            batch_size = 10
-            batch_size2 = 10
+        # else:
+
         width = 64
         ker_width = 1000
         depth = 6

@@ -37,7 +37,7 @@ class KernelNN(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-r = 16
+r = 4
 s = int(((241 - 1)/r) + 1)
 n = s**2
 m = 100
@@ -52,7 +52,7 @@ print('resolution', s)
 ntrain = 100
 ntest = 40
 
-batch_size = 10
+batch_size = 1
 batch_size2 = 2
 width = 64
 ker_width = 1024

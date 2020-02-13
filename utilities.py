@@ -5,6 +5,7 @@ import h5py
 import sklearn.metrics
 from torch_geometric.data import Data
 import torch.nn as nn
+from scipy.ndimage import gaussian_filter
 
 #################################################
 #
@@ -444,7 +445,8 @@ class LargeGridSplitter(object):
                 theta_sub = theta[x::self.r, y::self.r,:].reshape(-1,theta_d)
 
                 perm = torch.randperm(self.n)
-                idx = perm[:self.m]
+                m = self.m - grid_sub.shape[0]
+                idx = perm[:m]
                 grid_sample = self.grid.reshape(self.n,-1)[idx]
                 theta_sample = theta.reshape(self.n,-1)[idx]
 
@@ -466,19 +468,63 @@ class LargeGridSplitter(object):
                 split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
                 data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
 
+        return data
+
+    def sample(self, theta, Y):
+        theta_d = theta.shape[1]
+        theta = theta.reshape(self.resolution, self.resolution, theta_d)
+        Y = Y.reshape(self.resolution, self.resolution)
+
+        x = torch.randint(0,self.r,(1,))
+        y = torch.randint(0,self.r,(1,))
+
+
+        grid_sub = self.grid[x::self.r, y::self.r, :].reshape(-1, 2)
+        theta_sub = theta[x::self.r, y::self.r, :].reshape(-1, theta_d)
+        Y_sub = Y[x::self.r, y::self.r].reshape(-1, )
+
+        perm = torch.randperm(self.n)
+
+        m = self.m - Y_sub.shape[0]
+        idx = perm[:m]
+        grid_sample = self.grid.reshape(self.n, -1)[idx]
+        theta_sample = theta.reshape(self.n, -1)[idx]
+        Y_sample = Y.reshape(self.n, )[idx]
+
+        grid_split = torch.cat([grid_sub, grid_sample], dim=0)
+        theta_split = torch.cat([theta_sub, theta_sample], dim=0)
+        Y_split = torch.cat([Y_sub, Y_sample], dim=0)
+        X = torch.cat([grid_split, theta_split], dim=1)
+
+
+        pwd = sklearn.metrics.pairwise_distances(grid_split)
+        edge_index = np.vstack(np.where(pwd <= self.radius))
+        n_edges = edge_index.shape[1]
+        edge_index = torch.tensor(edge_index, dtype=torch.long)
+
+        edge_attr = np.zeros((n_edges, 6))
+        a = theta_split[:, 0]
+        edge_attr[:, :4] = grid_split[edge_index.T].reshape(n_edges, -1)
+        edge_attr[:, 4] = a[edge_index[0]]
+        edge_attr[:, 5] = a[edge_index[1]]
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        split_idx = torch.tensor([x, y], dtype=torch.long).reshape(1, 2)
+        data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx)
+        print(X.shape, Y.shape, edge_index.shape, edge_attr.shape)
 
         return data
 
-    def assemble(self, pred, split_idx, batch_size2):
+
+    def assemble(self, pred, split_idx, batch_size2, sigma=1):
         assert len(pred) == len(split_idx)
         assert len(pred) == self.r**2 // batch_size2
 
         out = torch.zeros((self.resolution,self.resolution))
         for i in range(len(pred)):
-            pred_i = pred[i]
+            pred_i = pred[i].reshape(batch_size2, self.m)
             split_idx_i = split_idx[i]
-            idx = 0
             for j in range(batch_size2):
+                pred_ij = pred_i[j,:]
                 x, y = split_idx_i[j]
                 if x==0:
                     nx = self.s
@@ -488,21 +534,12 @@ class LargeGridSplitter(object):
                     ny = self.s
                 else:
                     ny = self.s-1
-                pred_ij = pred_i[idx : idx + nx * ny]
-                out[x::self.r, y::self.r] = pred_ij.reshape(nx,ny)
-                idx = idx + nx * ny + self.m
+                # pred_ij = pred_i[idx : idx + nx * ny]
+                out[x::self.r, y::self.r] = pred_ij[:nx * ny].reshape(nx,ny)
 
-            assert idx == pred_i.shape[0]
-
+        out = gaussian_filter(out, sigma=sigma, mode='constant', cval=0)
         return out.reshape(-1,)
 
-    def cuda(self):
-        self.s = self.s.cuda()
-        self.r = self.r.cuda()
-
-    def cpu(self):
-        self.s = self.s.cpu()
-        self.r = self.r.cpu()
 
 
 def downsample(data, grid_size, l):
