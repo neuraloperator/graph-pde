@@ -254,6 +254,15 @@ class SquareMeshGenerator(object):
 
         return torch.tensor(self.edge_index, dtype=torch.long)
 
+    def gaussian_connectivity(self, sigma):
+        pwd = sklearn.metrics.pairwise_distances(self.grid)
+        rbf = np.exp(-pwd**2/sigma**2)
+        sample = np.random.binomial(1,rbf)
+        self.edge_index = np.vstack(np.where(sample))
+        self.n_edges = self.edge_index.shape[1]
+        return torch.tensor(self.edge_index, dtype=torch.long)
+
+
     def get_grid(self):
         return torch.tensor(self.grid, dtype=torch.float)
 
@@ -358,6 +367,14 @@ class RandomMeshGenerator(object):
         self.edge_index = np.vstack(np.where(pwd <= r))
         self.n_edges = self.edge_index.shape[1]
 
+        return torch.tensor(self.edge_index, dtype=torch.long)
+
+    def gaussian_connectivity(self, sigma):
+        pwd = sklearn.metrics.pairwise_distances(self.grid_sample)
+        rbf = np.exp(-pwd**2/sigma**2)
+        sample = np.random.binomial(1,rbf)
+        self.edge_index = np.vstack(np.where(sample))
+        self.n_edges = self.edge_index.shape[1]
         return torch.tensor(self.edge_index, dtype=torch.long)
 
     def attributes(self, f=None, theta=None):

@@ -39,10 +39,10 @@ class KernelNN(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-ntrain = 100
-ntest = 2
+ntrain = 1
+ntest = 1
 
-r = 16
+r = 1
 s = int(((241 - 1)/r) + 1)
 n = s**2
 m = 100
@@ -54,16 +54,17 @@ testr1 = 1
 tests1 = int(((241 - 1)/testr1) + 1) ##241
 test_split = 16 ##16
 testn1 = s**2
-testm = 300
+testm = 200
 
 radius_train = 0.15
 radius_test = 0.15
+rbf_sigma = 0.2
 
 print('resolution', s)
 
 
-batch_size = 4
-batch_size2 = 4
+batch_size = 1
+batch_size2 = 1
 width = 64
 ker_width = 1024
 depth = 6
@@ -221,7 +222,7 @@ with torch.no_grad():
             pred.append(out)
             split_idx.append(batch.split_idx.tolist())
 
-        out = gridsplitter.assemble(pred, split_idx, batch_size2)
+        out = gridsplitter.assemble(pred, split_idx, batch_size2, sigma=2)
         y = test_u[i]
         test_l2 += myloss(u_normalizer.decode(out.view(1, -1)), y.view(1, -1)).item()
 
