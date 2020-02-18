@@ -12,50 +12,6 @@ from nn_conv import NNConv, NNConv_old
 from timeit import default_timer
 import scipy.io
 
-class KernelNN(torch.nn.Module):
-    def __init__(self, width,  depth, ker_in, in_width=1, out_width=1):
-        super(KernelNN, self).__init__()
-        self.depth = depth
-
-        self.fc1 = torch.nn.Linear(in_width, width)
-
-        kernel = DenseNet([ker_in, width//4, width], torch.nn.ReLU)
-        self.conv1 = NNConv(width, width, kernel, aggr='mean')
-
-        self.fc2 = torch.nn.Linear(width, 1)
-
-    def forward(self, data):
-        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
-        x = self.fc1(x)
-        for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
-
-        x = self.fc2(x)
-        return x
-
-class KernelNN2(torch.nn.Module):
-    def __init__(self, width, depth, ker_in, in_width=1, out_width=1):
-        super(KernelNN2, self).__init__()
-        self.depth = depth
-
-        self.fc1 = torch.nn.Linear(in_width, width)
-
-        kernel = DenseNet([ker_in, width//4, width], torch.nn.ReLU)
-        self.conv1 = NNConv(width, width, kernel, aggr='mean')
-
-        kernel2 = DenseNet([ker_in, width * in_width], torch.nn.ReLU)
-        self.conv2 = NNConv_old(in_width, width, kernel2, aggr='mean')
-
-        self.fc2 = torch.nn.Linear(width, 1)
-
-    def forward(self, data):
-        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
-        x = self.fc1(x)
-        for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
-
-        x = self.fc2(x)
-        return x
 
 class KernelNN3(torch.nn.Module):
     def __init__(self, width_node, width_kernel, depth, ker_in, in_width=1, out_width=1):
@@ -73,7 +29,9 @@ class KernelNN3(torch.nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         x = self.fc1(x)
         for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
+            x = self.conv1(x, edge_index, edge_attr)
+            if k != self.depth - 1:
+                x = F.relu(x)
 
         x = self.fc2(x)
         return x
@@ -82,16 +40,16 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for k in (1,):
-    for ntrain in (10,100,1000):
-        r = 2
+for k in (2,):
+    for ntrain in (100,):
+        r = 1
         s = int(((241 - 1)/r) + 1)
         n = s**2
         m = 200
         # k = 5
 
-        radius_train = 0.15
-        radius_test = 0.15
+        radius_train = 0.25
+        radius_test = 0.25
         print('resolution', s)
 
 
@@ -105,7 +63,7 @@ for k in (1,):
             batch_size = 20
             batch_size2 = 20
         width = 64
-        ker_width = 1000
+        ker_width = 64
         depth = 6
         edge_features = 6
         node_features = 6

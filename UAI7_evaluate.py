@@ -19,7 +19,7 @@ class KernelNN(torch.nn.Module):
 
         self.fc1 = torch.nn.Linear(in_width, width)
 
-        kernel = DenseNet([ker_in, ker_width, ker_width, width**2], torch.nn.ReLU)
+        kernel = DenseNet([ker_in, ker_width//2, ker_width, width**2], torch.nn.ReLU)
         self.conv1 = NNConv_old(width, width, kernel, aggr='mean')
 
         self.fc2 = torch.nn.Linear(width, 1)
@@ -35,43 +35,50 @@ class KernelNN(torch.nn.Module):
         x = self.fc2(x)
         return x
 
+# torch.cuda.set_device('cuda:3')
+s0 = 421
 
-TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
-TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
+TRAIN_PATH = 'data/piececonst_r'+str(s0)+'_N1024_smooth1.mat'
+TEST_PATH = 'data/piececonst_r'+str(s0)+'_N1024_smooth2.mat'
 
-ntrain = 1
-ntest = 1
+ntrain = 1024
+ntest = 100
 
-r = 1
-s = int(((241 - 1)/r) + 1)
+
+
+r = 5
+s = int(((s0 - 1)/r) + 1)
 n = s**2
 m = 100
 k = 2
-trainm = 200
-train_split = 1
+trainm = 300
+train_split = 6
+assert ((s0 - 1)/r) % train_split == 0 # the split must divide s-1
 
-testr1 = 1
-tests1 = int(((241 - 1)/testr1) + 1) ##241
-test_split = 16 ##16
+testr1 = r
+tests1 = int(((s0 - 1)/testr1) + 1)
+test_split = train_split
 testn1 = s**2
-testm = 200
+testm = trainm
 
-radius_train = 0.15
-radius_test = 0.15
-rbf_sigma = 0.2
+radius_train = 0.25
+radius_test = 0.25
+# rbf_sigma = 0.2
 
 print('resolution', s)
 
 
-batch_size = 1
-batch_size2 = 1
+batch_size = 4 # factor of ntrain * k
+batch_size2 = 3 # factor of test_split
+assert test_split%batch_size2 == 0 # the batchsize must divide the split
+
 width = 64
 ker_width = 1024
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 10
+epochs = 100
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
@@ -114,7 +121,7 @@ agy_normalizer = GaussianNormalizer(train_a_grady)
 train_a_grady = agy_normalizer.encode(train_a_grady)
 test_a_grady = agy_normalizer.encode(test_a_grady)
 
-u_normalizer = GaussianNormalizer(train_u)
+u_normalizer = UnitGaussianNormalizer(train_u)
 train_u = u_normalizer.encode(train_u)
 # test_u = y_normalizer.encode(test_u)
 
@@ -212,6 +219,7 @@ for ep in range(epochs):
 np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
 
+u_normalizer.cpu()
 with torch.no_grad():
     for i, equation_loader in enumerate(data_test):
         pred = []
@@ -222,41 +230,42 @@ with torch.no_grad():
             pred.append(out)
             split_idx.append(batch.split_idx.tolist())
 
-        out = gridsplitter.assemble(pred, split_idx, batch_size2, sigma=2)
+        out = gridsplitter.assemble(pred, split_idx, batch_size2, sigma=1)
         y = test_u[i]
-        test_l2 += myloss(u_normalizer.decode(out.view(1, -1)), y.view(1, -1)).item()
+        test_l2 += myloss(u_normalizer.decode(out.view(1, -1)), y.view(1, -1))
 
-        resolution = tests1
-        truth = test_u[i].numpy().reshape((resolution, resolution))
-        approx = u_normalizer.decode(out.view(1, -1)).detach().numpy().reshape((resolution, resolution))
-        _min = np.min(np.min(truth))
-        _max = np.max(np.max(truth))
+        if i <= 10:
+            resolution = tests1
+            truth = test_u[i].numpy().reshape((resolution, resolution))
+            approx = u_normalizer.decode(out.view(1, -1)).detach().numpy().reshape((resolution, resolution))
+            _min = np.min(np.min(truth))
+            _max = np.max(np.max(truth))
 
-        plt.figure()
-        plt.subplot(1, 3, 1)
-        plt.imshow(truth, vmin=_min, vmax=_max)
-        plt.xticks([], [])
-        plt.yticks([], [])
-        plt.colorbar(fraction=0.046, pad=0.04)
-        plt.title('Ground Truth')
+            plt.figure()
+            plt.subplot(1, 3, 1)
+            plt.imshow(truth, vmin=_min, vmax=_max)
+            plt.xticks([], [])
+            plt.yticks([], [])
+            plt.colorbar(fraction=0.046, pad=0.04)
+            plt.title('Ground Truth')
 
-        plt.subplot(1, 3, 2)
-        plt.imshow(approx, vmin=_min, vmax=_max)
-        plt.xticks([], [])
-        plt.yticks([], [])
-        plt.colorbar(fraction=0.046, pad=0.04)
-        plt.title('Approximation')
+            plt.subplot(1, 3, 2)
+            plt.imshow(approx, vmin=_min, vmax=_max)
+            plt.xticks([], [])
+            plt.yticks([], [])
+            plt.colorbar(fraction=0.046, pad=0.04)
+            plt.title('Approximation')
 
-        plt.subplot(1, 3, 3)
-        plt.imshow((approx - truth) ** 2)
-        plt.xticks([], [])
-        plt.yticks([], [])
-        plt.colorbar(fraction=0.046, pad=0.04)
-        plt.title('Error')
+            plt.subplot(1, 3, 3)
+            plt.imshow((approx - truth) ** 2)
+            plt.xticks([], [])
+            plt.yticks([], [])
+            plt.colorbar(fraction=0.046, pad=0.04)
+            plt.title('Error')
 
-        plt.subplots_adjust(wspace=0.5, hspace=0.5)
-        plt.savefig(path_image + str(i) + '.png')
-        plt.show()
+            plt.subplots_adjust(wspace=0.5, hspace=0.5)
+            plt.savefig(path_image + str(i) + '.png')
+            # plt.show()
 
 
 t3 = default_timer()

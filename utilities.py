@@ -485,7 +485,7 @@ class LargeGridSplitter(object):
                 split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
 
                 data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
-        print('test', X.shape, edge_index.shape, edge_attr.shape)
+        print('test', len(data), X.shape, edge_index.shape, edge_attr.shape)
         return data
 
     def sample(self, theta, Y):
@@ -498,10 +498,11 @@ class LargeGridSplitter(object):
 
         grid_sub = self.grid[x::self.r, y::self.r, :].reshape(-1, 2)
         theta_sub = theta[x::self.r, y::self.r, :].reshape(-1, theta_d)
-        Y_sub = Y[x::self.r, y::self.r].reshape(-1, )
+        Y_sub = Y[x::self.r, y::self.r].reshape(-1,)
+        n_sub = Y_sub.shape[0]
 
-        if self.m >= self.n:
-            m = self.m - self.n
+        if self.m >= n_sub:
+            m = self.m - n_sub
             perm = torch.randperm(self.n)
             idx = perm[:m]
             grid_sample = self.grid.reshape(self.n, -1)[idx]
@@ -533,7 +534,7 @@ class LargeGridSplitter(object):
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
         split_idx = torch.tensor([x, y], dtype=torch.long).reshape(1, 2)
         data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx)
-        print('train', X.shape, Y.shape, edge_index.shape, edge_attr.shape)
+        print('train', X.shape, Y_split.shape, edge_index.shape, edge_attr.shape)
 
         return data
 
