@@ -12,7 +12,8 @@ from nn_conv import NNConv, NNConv_old
 from timeit import default_timer
 import scipy.io
 
-
+torch.manual_seed(0)
+np.random.seed(0)
 
 class KernelNN3(torch.nn.Module):
     def __init__(self, width_node, width_kernel, depth, ker_in, in_width=1, out_width=1):
@@ -24,7 +25,8 @@ class KernelNN3(torch.nn.Module):
         kernel = DenseNet([ker_in, width_kernel // 2, width_kernel, width_node**2], torch.nn.ReLU)
         self.conv1 = NNConv_old(width_node, width_node, kernel, aggr='mean')
 
-        self.fc2 = torch.nn.Linear(width_node, 1)
+        self.fc21 = torch.nn.Linear(width_node, width_kernel)
+        self.fc22 = torch.nn.Linear(width_kernel, 1)
 
     def forward(self, data):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
@@ -34,7 +36,9 @@ class KernelNN3(torch.nn.Module):
             if k != self.depth-1:
                 x = F.relu(x)
 
-        x = self.fc2(x)
+        x = self.fc21(x)
+        x = F.relu(x)
+        x = self.fc22(x)
         return x
 
 
@@ -45,7 +49,7 @@ r = 1
 s = int(((241 - 1)/r) + 1)
 n = s**2
 m = 200
-k = 5
+k = 2
 
 radius_train = 0.25
 radius_test = 0.25
@@ -53,26 +57,26 @@ rbf_sigma = 0.2
 print('resolution', s)
 
 
-ntrain = 40
+ntrain = 100
 ntest = 10
 
-batch_size = 5
-batch_size2 = 5
+batch_size = 10
+batch_size2 = 10
 width = 64
 ker_width = 64
 depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 200
+epochs = 100
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
 
 
-path_train_err = 'results/boundary_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
-path_test_err = 'results/boundary_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
-path_image = 'image/boundary_r'+str(s)+'_n'+ str(ntrain)+''
+path_train_err = 'results/boundary2_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
+path_test_err = 'results/boundary2_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
+path_image = 'image/boundary2_r'+str(s)+'_n'+ str(ntrain)+''
 
 
 t1 = default_timer()

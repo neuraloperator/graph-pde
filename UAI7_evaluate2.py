@@ -49,9 +49,9 @@ ntest = 1
 r = 1
 s = int(((s0 - 1)/r) + 1)
 n = s**2
-m = 421
 k = 2
-trainm = m
+trainm = 421
+assert n % trainm == 0
 train_split = 30
 assert ((s0 - 1)/r) % train_split == 0 # the split must divide s-1
 
@@ -127,18 +127,21 @@ train_u = u_normalizer.encode(train_u)
 # test_u = y_normalizer.encode(test_u)
 
 
-meshgenerator = SquareMeshGenerator([[0, 1], [0, 1]], [s, s])
-grid = meshgenerator.get_grid()
-gridsplitter = DownsampleGridSplitter(grid, resolution=s, r=train_split, m=trainm, radius=radius_test)
+meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=trainm)
 data_train = []
 for j in range(ntrain):
     for i in range(k):
-        theta = torch.cat([train_a[j, :].reshape(-1, 1),
-                               train_a_smooth[j, :].reshape(-1, 1), train_a_gradx[j, :].reshape(-1, 1),
-                               train_a_grady[j, :].reshape(-1, 1)
-                               ], dim=1)
-        y = train_u[j,:].reshape(-1, 1)
-        data_train.append(gridsplitter.sample(theta, y))
+        idx = meshgenerator.sample()
+        grid = meshgenerator.get_grid()
+        edge_index = meshgenerator.ball_connectivity(radius_train)
+        edge_attr = meshgenerator.attributes(theta=train_a[j, :])
+        # data_train.append(Data(x=init_point.clone().view(-1,1), y=train_y[j,:], edge_index=edge_index, edge_attr=edge_attr))
+        data_train.append(Data(x=torch.cat([grid, train_a[j, idx].reshape(-1, 1),
+                                            train_a_smooth[j, idx].reshape(-1, 1), train_a_gradx[j, idx].reshape(-1, 1),
+                                            train_a_grady[j, idx].reshape(-1, 1)
+                                            ], dim=1),
+                               y=train_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
+                               ))
 
 train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 # print('grid', grid.shape, 'edge_index', edge_index.shape, 'edge_attr', edge_attr.shape)
@@ -147,7 +150,7 @@ train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[tests1,tests1])
 grid = meshgenerator.get_grid()
-gridsplitter = DownsampleGridSplitter(grid, resolution=tests1, r=test_split, m=testm, radius=radius_test)
+gridsplitter = RandomGridSplitter(grid, resolution=tests1, l=2, m=testm, radius=radius_test)
 
 data_test = []
 for j in range(ntest):
@@ -221,9 +224,9 @@ with torch.no_grad():
         split_idx = []
         for batch in equation_loader:
             batch = batch.to(device)
-            out = model(batch)
+            out = model(batch).detach().cpu()
             pred.append(out)
-            split_idx.append(batch.split_idx.tolist())
+            split_idx.append(batch.split_idx)
 
         out = gridsplitter.assemble(pred, split_idx, batch_size2, sigma=1)
         y = test_u[i]

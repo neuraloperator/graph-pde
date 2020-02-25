@@ -438,9 +438,72 @@ class RandomMeshGenerator(object):
     #
     #     return torch.tensor(edge_attr_boundary, dtype=torch.float)
 
-class LargeGridSplitter(object):
+class RandomGridSplitter(object):
+    def __init__(self, grid, resolution, m=200, l=2, radius=0.25):
+        super(RandomGridSplitter, self).__init__()
+
+        self.grid = grid
+        self.resolution = resolution
+        self.n = resolution**2
+        self.m = m
+        self.l = l
+        self.radius = radius
+
+        assert self.n % self.m == 0
+        self.num = self.n // self.m
+
+    def get_data(self, theta):
+
+        data = []
+        for i in range(self.l):
+            perm = torch.randperm(self.n)
+            perm = perm.reshape(self.num, self.m)
+
+            for j in range(self.num):
+                idx = perm[j,:].reshape(-1,)
+                grid_sample = self.grid.reshape(self.n,-1)[idx]
+                theta_sample = theta.reshape(self.n,-1)[idx]
+
+                X = torch.cat([grid_sample,theta_sample],dim=1)
+
+                pwd = sklearn.metrics.pairwise_distances(grid_sample)
+                edge_index = np.vstack(np.where(pwd <= self.radius))
+                n_edges = edge_index.shape[1]
+                edge_index = torch.tensor(edge_index, dtype=torch.long)
+
+                edge_attr = np.zeros((n_edges, 6))
+                a = theta_sample[:,0]
+                edge_attr[:, :4] = grid_sample[edge_index.T].reshape(n_edges, -1)
+                edge_attr[:, 4] = a[edge_index[0]]
+                edge_attr[:, 5] = a[edge_index[1]]
+                edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+
+                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=idx))
+        print('test', len(data), X.shape, edge_index.shape, edge_attr.shape)
+        return data
+
+    def assemble(self, pred, split_idx, batch_size2, sigma=1):
+        assert len(pred) == len(split_idx)
+        assert len(pred) == self.num * self.l // batch_size2
+
+        out = torch.zeros(self.n, )
+        for i in range(len(pred)):
+            pred_i = pred[i].reshape(batch_size2, self.m)
+            split_idx_i = split_idx[i].reshape(batch_size2, self.m)
+            for j in range(batch_size2):
+                pred_ij = pred_i[j,:].reshape(-1,)
+                idx = split_idx_i[j,:].reshape(-1,)
+                out[idx] = pred_ij
+
+        out = out / self.l
+
+        # out = gaussian_filter(out, sigma=sigma, mode='constant', cval=0)
+        # out = torch.tensor(out, dtype=torch.float)
+        return out.reshape(-1,)
+
+class DownsampleGridSplitter(object):
     def __init__(self, grid, resolution, r, m=100, radius=0.15):
-        super(LargeGridSplitter, self).__init__()
+        super(DownsampleGridSplitter, self).__init__()
 
         self.grid = grid.reshape(resolution, resolution,2)
         # self.theta = theta.reshape(resolution, resolution,-1)
