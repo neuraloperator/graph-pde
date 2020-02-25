@@ -84,10 +84,11 @@ scheduler_step = 50
 scheduler_gamma = 0.5
 
 
-
-path_train_err = 'results/UAI7_new_r'+str(s)+'testm'+str(testm)+'train.txt'
-path_test_err = 'results/UAI7_new_r'+str(s)+'_s'+ str(tests1)+'testm'+str(testm)+'test.txt'
-path_image = 'image/UAI7_new_r'+str(s)+'_s'+ str(tests1)+'testm'+str(testm)
+path = 'UAI7_new_r'+str(s)+'_s'+ str(tests1)+'testm'+str(testm)
+path_model = 'model/'+path
+path_train_err = 'results/'+path+'train.txt'
+path_test_err = 'results/'+path+'test.txt'
+path_image = 'image/'+path
 
 
 t1 = default_timer()
@@ -201,7 +202,8 @@ for ep in range(epochs):
         loss = torch.norm(out.view(-1) - batch.y.view(-1),1)
         loss.backward()
 
-        l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
+        l2 = myloss(u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
+                    u_normalizer.decode(batch.y.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)))
         # l2.backward()
 
         optimizer.step()
@@ -264,19 +266,20 @@ with torch.no_grad():
             plt.title('Error')
 
             plt.subplots_adjust(wspace=0.5, hspace=0.5)
-            plt.savefig(path_image + str(i) + '.png')
+            # plt.savefig(path_image + str(i) + '.png')
+            plt.savefig(path_image + str(i) + '.eps', format = 'eps', bbox_inches="tight")
             # plt.show()
 
 
 t3 = default_timer()
 print(ep, t3-t2, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
 
-ttrain[ep] = train_mse / len(train_loader)
+ttrain[ep] = train_l2/(ntrain * k)
 ttest[ep] = test_l2 / ntest
 
 np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
-
+torch.save(model, path_model)
 ##################################################################################################
 
 ### Ploting

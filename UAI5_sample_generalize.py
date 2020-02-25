@@ -77,7 +77,7 @@ for m in (100,200,400,800):
         batch_size = 2
         epochs = 100
 
-
+    path_model = 'model/UAI5_s'+str(s)+'_m'+ str(m)
     path_train_err = 'results/UAI5_s'+str(s)+'_m'+ str(m) + 'train.txt'
     path_test_err1 = 'results/UAI5_s'+str(s)+'_m'+ str(m)+'_mtest'+ str(mtest1) + 'test.txt'
     path_test_err2 = 'results/UAI5_s' + str(s) + '_m' + str(m) + '_mtest' + str(mtest2) + 'test.txt'
@@ -230,8 +230,9 @@ for m in (100,200,400,800):
             mse = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
             mse.backward()
 
-            l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
-
+            l2 = myloss(u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
+                        u_normalizer.decode(batch.y.view(batch_size, -1),
+                                            sample_idx=batch.sample_idx.view(batch_size, -1)))
             optimizer.step()
             train_mse += mse.item()
             train_l2 += l2.item()
@@ -266,7 +267,7 @@ for m in (100,200,400,800):
                 out = u_normalizer.decode(out.view(2,-1), sample_idx=batch.sample_idx.view(2,-1))
                 test4_l2 += myloss(out, batch.y.view(2, -1)).item()
 
-        ttrain[ep] = train_mse/len(train_loader)
+        ttrain[ep] = train_l2/(ntrain * k)
         ttest1[ep] = test1_l2/ntest
         ttest2[ep] = test2_l2 / ntest
         ttest3[ep] = test3_l2 / ntest
@@ -280,3 +281,4 @@ for m in (100,200,400,800):
     np.savetxt(path_test_err2, ttest2)
     np.savetxt(path_test_err3, ttest3)
     np.savetxt(path_test_err4, ttest4)
+    torch.save(model, path_model)

@@ -47,7 +47,7 @@ radius_test = 0.10
 print('resolution', s)
 
 
-ntrain = 100
+ntrain = 10
 ntest = 100
 
 batch_size = 2
@@ -58,15 +58,16 @@ depth = 6
 edge_features = 6
 node_features = 6
 
-epochs = 500
+epochs = 5000
 learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.5
 
-
-path_train_err = 'results/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+'train.txt'
-path_test_err = 'results/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+'test.txt'
-path_image = 'image/UAI2_new_r'+str(s)+'_n'+ str(ntrain)+''
+path = 'UAI2_new2_r'+str(s)+'_n'+ str(ntrain)
+path_model = 'model/'+path+''
+path_train_err = 'results/'+path+'train.txt'
+path_test_err = 'results/'+path+'test.txt'
+path_image = 'image/'+path+''
 
 
 t1 = default_timer()
@@ -183,7 +184,7 @@ for ep in range(epochs):
         loss = torch.norm(out.view(-1) - batch.y.view(-1),1)
         loss.backward()
 
-        l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
+        l2 = myloss(u_normalizer.decode(out.view(batch_size,-1)), u_normalizer.decode(batch.y.view(batch_size, -1)))
         # l2.backward()
 
         optimizer.step()
@@ -203,7 +204,7 @@ for ep in range(epochs):
                 test_l2 += myloss(u_normalizer.decode(out.view(batch_size2,-1)), batch.y.view(batch_size2, -1)).item()
                 # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
-        ttrain[ep] = train_mse/len(train_loader)
+        ttrain[ep] = train_l2/(ntrain)
         ttest[ep] = test_l2/ntest
 
     print(ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain), test_l2/ntest)
@@ -211,7 +212,7 @@ for ep in range(epochs):
 np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
 
-
+torch.save(model, path_model)
 ##################################################################################################
 
 ### Ploting

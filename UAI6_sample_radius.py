@@ -76,10 +76,11 @@ for m in (100, 200, 400):
         scheduler_step = 50
         scheduler_gamma = 0.5
 
-
-        path_train_err = 'results/UAI6_s'+str(s)+'_m'+ str(m)+'_radius'+ str(radius_train) + 'train.txt'
-        path_test_err = 'results/UAI6_s'+str(s)+'_m'+ str(m)+'_radius'+ str(radius_train) + 'test.txt'
-        path_image = 'results/UAI6_s'+str(s)+'_m'+ str(m)+'_radius'+ str(radius_train) + '_'
+        path = 'UAI6_s'+str(s)+'_m'+ str(m)+'_radius'+ str(radius_train)
+        path_model = 'model/'+ path
+        path_train_err = 'results/'+ path + 'train.txt'
+        path_test_err = 'results/'+ path + 'test.txt'
+        path_image = 'results/'+ path
 
 
         t1 = default_timer()
@@ -179,8 +180,9 @@ for m in (100, 200, 400):
                 mse = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
                 mse.backward()
 
-                l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
-
+                l2 = myloss(
+                    u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
+                    u_normalizer.decode(batch.y.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)))
                 optimizer.step()
                 train_mse += mse.item()
                 train_l2 += l2.item()
@@ -198,13 +200,14 @@ for m in (100, 200, 400):
                     test_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
                     # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
-            ttrain[ep] = train_mse/len(train_loader)
+            ttrain[ep] = train_l2/(ntrain * k)
             ttest[ep] = test_l2/ntest
 
             print(m, radius_train, ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
 
         np.savetxt(path_train_err, ttrain)
         np.savetxt(path_test_err, ttest)
+        torch.save(model, path_model)
 
         plt.figure()
         # plt.plot(ttrain, label='train loss')

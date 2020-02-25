@@ -70,11 +70,12 @@ for r in (1,2,4,8,16):
     scheduler_gamma = 0.5
 
 
-
-    path_train_err = 'results/UAI3_s'+str(s)+'train.txt'
-    path_test_err1 = 'results/UAI3_s'+str(s)+'test61.txt'
-    path_test_err2 = 'results/UAI3_s'+str(s)+'test121.txt'
-    path_test_err3 = 'results/UAI3_s'+str(s)+'test241.txt'
+    path = 'UAI3_s'+str(s)
+    path_model = 'model/' + path
+    path_train_err = 'results/'+path+'train.txt'
+    path_test_err1 = 'results/'+path+'test61.txt'
+    path_test_err2 = 'results/'+path+'test121.txt'
+    path_test_err3 = 'results/'+path+'test241.txt'
 
     t1 = default_timer()
 
@@ -225,7 +226,8 @@ for r in (1,2,4,8,16):
             mse = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
             mse.backward()
 
-            l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
+            l2 = myloss(u_normalizer.decode(out.view(batch_size,-1), sample_idx=batch.sample_idx.view(batch_size,-1)),
+                        u_normalizer.decode(batch.y.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size,-1)))
 
             optimizer.step()
             train_mse += mse.item()
@@ -257,8 +259,8 @@ for r in (1,2,4,8,16):
                 test3_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
 
 
-        ttrain[ep] = train_mse/len(train_loader)
-        ttest1[ep] = test1_l2/ntest
+        ttrain[ep] = train_l2/(ntrain * k)
+        ttest1[ep] = test1_l2 / ntest
         ttest2[ep] = test2_l2 / ntest
         ttest3[ep] = test3_l2 / ntest
 
@@ -270,4 +272,5 @@ for r in (1,2,4,8,16):
     np.savetxt(path_test_err1, ttest1)
     np.savetxt(path_test_err2, ttest2)
     np.savetxt(path_test_err3, ttest3)
+    torch.save(model, path_model)
 

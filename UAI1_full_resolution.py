@@ -65,15 +65,19 @@ learning_rate = 0.0001
 scheduler_step = 50
 scheduler_gamma = 0.8
 
-
-path_train_err = 'results/UAI1_r'+str(s)+'_n'+ str(ntrain)+'train'
-path_test_err16 = 'results/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test16'
-path_test_err31 = 'results/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test31'
-path_test_err61 = 'results/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test61'
-path_image_train = 'image/UAI1_r'+str(s)+'_n'+ str(ntrain)+'train'
-path_image_test16 = 'image/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test16'
-path_image_test31 = 'image/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test31'
-path_image_test61 = 'image/UAI1_r'+str(s)+'_n'+ str(ntrain)+'test61'
+path = 'UAI1_r'+str(s)+'_n'+ str(ntrain)
+path_model = 'model/'+path+''
+path_train_err = 'results/'+path+'train.txt'
+path_test_err = 'results/'+path+'test.txt'
+path_image = 'image/'+path+''
+path_train_err = 'results/'+path+'train'
+path_test_err16 = 'results/'+path+'test16'
+path_test_err31 = 'results/'+path+'test31'
+path_test_err61 = 'results/'+path+'test61'
+path_image_train = 'image/'+path+'train'
+path_image_test16 = 'image/'+path+'test16'
+path_image_test31 = 'image/'+path+'test31'
+path_image_test61 = 'image/'+path+'test61'
 
 t1 = default_timer()
 
@@ -262,7 +266,7 @@ for ep in range(epochs):
         loss = torch.norm(out.view(-1) - batch.y.view(-1),1)
         loss.backward()
 
-        l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
+        l2 = myloss(u_normalizer.decode(out.view(batch_size,-1)), u_normalizer.decode(batch.y.view(batch_size, -1)))
         # l2.backward()
 
         optimizer.step()
@@ -311,6 +315,7 @@ np.savetxt(path_test_err16 + '.txt', ttest16)
 np.savetxt(path_test_err31 + '.txt', ttest31)
 np.savetxt(path_test_err61 + '.txt', ttest61)
 
+torch.save(model, path_model)
 
 ##################################################################################################
 

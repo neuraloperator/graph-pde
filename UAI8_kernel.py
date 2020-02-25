@@ -20,8 +20,8 @@ class KernelNN3(torch.nn.Module):
 
         self.fc1 = torch.nn.Linear(in_width, width_node)
 
-        # kernel = DenseNet([ker_in, width_kernel // 4, width_kernel // 2, width_kernel,  width_kernel, width_node ** 2], torch.nn.ReLU)
-        kernel = DenseNet([ker_in, width_kernel // 2, width_kernel, width_node**2], torch.nn.ReLU)
+        kernel = DenseNet([ker_in, width_kernel // 4, width_kernel // 2, width_kernel,  width_kernel, width_node ** 2], torch.nn.ReLU)
+        # kernel = DenseNet([ker_in, width_kernel // 2, width_kernel, width_node**2], torch.nn.ReLU)
         # kernel = DenseNet([ker_in, width_kernel, width_node**2], torch.nn.ReLU)
 
         self.conv1 = NNConv_old(width_node, width_node, kernel, aggr='mean')
@@ -43,7 +43,7 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for ker_width in (4096, 1024, 128, 64):
+for ker_width in (256,):
     r = 1
     s = int(((241 - 1)/r) + 1)
     n = s**2
@@ -71,10 +71,11 @@ for ker_width in (4096, 1024, 128, 64):
     scheduler_step = 50
     scheduler_gamma = 0.5
 
-
-    path_train_err = 'results/UAI8_s'+str(s)+'_ker_width'+ str(ker_width)+'_depth3_train.txt'
-    path_test_err = 'results/UAI8_s'+str(s)+'_ker_width'+ str(ker_width)+'_depth3_test.txt'
-    path_image = 'results/UAI8_s'+str(s)+'_ker_width'+ str(ker_width)+'_depth3_'
+    path = 'UAI8_s'+str(s)+'_ker_width'+ str(ker_width)+'_depth5_'
+    path_model = 'model/'+path
+    path_train_err = 'results/'+path+'train.txt'
+    path_test_err = 'results/'+path+'test.txt'
+    path_image = 'results/'+path
 
 
     t1 = default_timer()
@@ -174,8 +175,9 @@ for ker_width in (4096, 1024, 128, 64):
             mse = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
             mse.backward()
 
-            l2 = myloss(out.view(batch_size,-1), batch.y.view(batch_size, -1))
-
+            l2 = myloss(u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
+                        u_normalizer.decode(batch.y.view(batch_size, -1),
+                                            sample_idx=batch.sample_idx.view(batch_size, -1)))
             optimizer.step()
             train_mse += mse.item()
             train_l2 += l2.item()
@@ -193,13 +195,14 @@ for ker_width in (4096, 1024, 128, 64):
                 test_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
                 # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
-        ttrain[ep] = train_mse/len(train_loader)
+        ttrain[ep] = train_l2/(ntrain * k)
         ttest[ep] = test_l2/ntest
 
         print(ker_width, ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
 
     np.savetxt(path_train_err, ttrain)
     np.savetxt(path_test_err, ttest)
+    torch.save(model, path_model)
 
     plt.figure()
     # plt.plot(ttrain, label='train loss')
