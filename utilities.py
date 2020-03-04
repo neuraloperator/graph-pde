@@ -502,18 +502,24 @@ class RandomGridSplitter(object):
         return out.reshape(-1,)
 
 class DownsampleGridSplitter(object):
-    def __init__(self, grid, resolution, r, m=100, radius=0.15):
+    def __init__(self, grid, resolution, r, m=100, radius=0.15,  edge_features=1):
         super(DownsampleGridSplitter, self).__init__()
 
         self.grid = grid.reshape(resolution, resolution,2)
         # self.theta = theta.reshape(resolution, resolution,-1)
         # self.y = y.reshape(resolution, resolution,1)
         self.resolution = resolution
-        self.s = int(((resolution - 1)/r) + 1)
+        if resolution%2==1:
+            self.s = int(((resolution - 1)/r) + 1)
+        else:
+            self.s = int(resolution/r)
         self.r = r
         self.n = resolution**2
         self.m = m
         self.radius = radius
+        self.edge_features = edge_features
+
+        self.index = torch.tensor(range(self.n), dtype=torch.long).reshape(self.resolution, self.resolution)
 
     def get_data(self, theta):
         theta_d = theta.shape[1]
@@ -539,11 +545,11 @@ class DownsampleGridSplitter(object):
                 n_edges = edge_index.shape[1]
                 edge_index = torch.tensor(edge_index, dtype=torch.long)
 
-                edge_attr = np.zeros((n_edges, 6))
-                a = theta_split[:,0]
+                edge_attr = np.zeros((n_edges, 4+self.edge_features*2))
+                a = theta_split[:, :self.edge_features]
                 edge_attr[:, :4] = grid_split[edge_index.T].reshape(n_edges, -1)
-                edge_attr[:, 4] = a[edge_index[0]]
-                edge_attr[:, 5] = a[edge_index[1]]
+                edge_attr[:, 4:4 + self.edge_features] = a[edge_index[0]]
+                edge_attr[:, 4 + self.edge_features: 4 + self.edge_features * 2] = a[edge_index[1]]
                 edge_attr = torch.tensor(edge_attr, dtype=torch.float)
                 split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
 
@@ -562,6 +568,7 @@ class DownsampleGridSplitter(object):
         grid_sub = self.grid[x::self.r, y::self.r, :].reshape(-1, 2)
         theta_sub = theta[x::self.r, y::self.r, :].reshape(-1, theta_d)
         Y_sub = Y[x::self.r, y::self.r].reshape(-1,)
+        index_sub = self.index[x::self.r, y::self.r].reshape(-1,)
         n_sub = Y_sub.shape[0]
 
         if self.m >= n_sub:
@@ -572,15 +579,18 @@ class DownsampleGridSplitter(object):
             theta_sample = theta.reshape(self.n, -1)[idx]
             Y_sample = Y.reshape(self.n, )[idx]
 
+
             grid_split = torch.cat([grid_sub, grid_sample], dim=0)
             theta_split = torch.cat([theta_sub, theta_sample], dim=0)
             Y_split = torch.cat([Y_sub, Y_sample], dim=0).reshape(-1,)
+            index_split = torch.cat([index_sub, idx], dim=0).reshape(-1,)
             X = torch.cat([grid_split, theta_split], dim=1)
 
         else:
             grid_split = grid_sub
             theta_split = theta_sub
             Y_split = Y_sub.reshape(-1,)
+            index_split = index_sub.reshape(-1,)
             X = torch.cat([grid_split, theta_split], dim=1)
 
 
@@ -589,15 +599,15 @@ class DownsampleGridSplitter(object):
         n_edges = edge_index.shape[1]
         edge_index = torch.tensor(edge_index, dtype=torch.long)
 
-        edge_attr = np.zeros((n_edges, 6))
-        a = theta_split[:, 0]
+        edge_attr = np.zeros((n_edges, 4+self.edge_features*2))
+        a = theta_split[:, :self.edge_features]
         edge_attr[:, :4] = grid_split[edge_index.T].reshape(n_edges, -1)
-        edge_attr[:, 4] = a[edge_index[0]]
-        edge_attr[:, 5] = a[edge_index[1]]
+        edge_attr[:, 4:4+self.edge_features] = a[edge_index[0]]
+        edge_attr[:, 4+self.edge_features: 4+self.edge_features*2] = a[edge_index[1]]
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
         split_idx = torch.tensor([x, y], dtype=torch.long).reshape(1, 2)
-        data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx)
-        print('train', X.shape, Y_split.shape, edge_index.shape, edge_attr.shape)
+        data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx, sample_idx=index_split)
+        print('train', X.shape, Y_split.shape, edge_index.shape, edge_attr.shape, index_split.shape)
 
         return data
 
@@ -613,14 +623,18 @@ class DownsampleGridSplitter(object):
             for j in range(batch_size2):
                 pred_ij = pred_i[j,:]
                 x, y = split_idx_i[j]
-                if x==0:
+                if self.resolution%2==1:
+                    if x==0:
+                        nx = self.s
+                    else:
+                        nx = self.s-1
+                    if y==0:
+                        ny = self.s
+                    else:
+                        ny = self.s-1
+                else:
                     nx = self.s
-                else:
-                    nx = self.s-1
-                if y==0:
                     ny = self.s
-                else:
-                    ny = self.s-1
                 # pred_ij = pred_i[idx : idx + nx * ny]
                 out[x::self.r, y::self.r] = pred_ij[:nx * ny].reshape(nx,ny)
 
