@@ -43,7 +43,7 @@ s0 = 64
 TRAIN_PATH = 'data/grain16_s64_N8000_smooth.mat'
 TEST_PATH = TRAIN_PATH
 
-ntrain = 4000
+ntrain = 7900
 ntest = 100
 
 
@@ -51,7 +51,7 @@ ntest = 100
 r = 1
 s = 64
 n = s**2
-m = 200
+m = 100
 k = 1
 trainm = m
 train_split = 8
@@ -70,29 +70,31 @@ radius_test = 0.4
 print('resolution', s)
 
 
-batch_size = 4 # factor of ntrain * k
-batch_size2 = 4 # factor of test_split
+batch_size = 20 # factor of ntrain * k
+batch_size2 = 8 # factor of test_split
 assert test_split%batch_size2 == 0 # the batchsize must divide the split
 
 width = 64
 ker_width = 128
 depth = 6
-edge_features = 6
+edge_features = 5
 edge_usage = 1
 node_features = 6
 
-epochs = 200
+epochs = 100
 learning_rate = 0.001
 scheduler_step = 20
 scheduler_gamma = 0.8
 
 
-path = 'grain_new_r'+str(s)+'_radius'+ str(radius_train)+'testm'+str(testm)
+path = 'grain_torus_r'+str(s)+'_radius'+ str(radius_train)+'testm'+str(testm)
 path_model = 'model/'+path
 path_train_err = 'results/'+path+'train.txt'
 path_test_err = 'results/'+path+'test.txt'
 path_image = 'image/'+path
 
+Pretrain = False
+path_pretrain = 'model/grain_new_r64_s64testm100'
 
 t1 = default_timer()
 
@@ -132,7 +134,7 @@ train_u = u_normalizer.encode(train_u)
 
 meshgenerator = SquareMeshGenerator([[0, 1], [0, 1]], [s, s])
 grid = meshgenerator.get_grid()
-gridsplitter = DownsampleGridSplitter(grid, resolution=s, r=train_split, m=trainm, radius=radius_test, edge_features=edge_usage)
+gridsplitter = TorusGridSplitter(grid, resolution=s, r=train_split, m=trainm, radius=radius_test, edge_features=edge_usage)
 data_train = []
 for j in range(ntrain):
     for i in range(k):
@@ -150,7 +152,7 @@ train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 
 meshgenerator = SquareMeshGenerator([[0,1],[0,1]],[tests1,tests1])
 grid = meshgenerator.get_grid()
-gridsplitter = DownsampleGridSplitter(grid, resolution=tests1, r=test_split, m=testm, radius=radius_test, edge_features=edge_usage)
+gridsplitter = TorusGridSplitter(grid, resolution=tests1, r=test_split, m=testm, radius=radius_test, edge_features=edge_usage)
 
 data_test = []
 for j in range(ntest):
@@ -179,7 +181,11 @@ t2 = default_timer()
 print('preprocessing finished, time used:', t2-t1)
 device = torch.device('cuda')
 
-model = KernelNN(width,ker_width,depth,edge_features,node_features).cuda()
+if Pretrain:
+    print('use pre-train model')
+    model = torch.load(path_pretrain)
+else:
+    model = KernelNN(width,ker_width,depth,edge_features,node_features).cuda()
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=5e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
@@ -278,6 +284,7 @@ for ep in range(epochs):
         print(ep, t3-t2, train_mse/len(train_loader), test_l2/ntest)
 
         ttest[ep] = test_l2 / ntest
+        torch.save(model, path_model+str(ep))
 
 np.savetxt(path_train_err, ttrain)
 np.savetxt(path_test_err, ttest)
@@ -291,8 +298,8 @@ torch.save(model, path_model)
 
 
 plt.figure()
-plt.plot(ttrain, label='train loss')
-plt.plot(ttest, label='test loss')
+plt.plot(ttrain[10:], label='train loss')
+plt.plot(ttest[10:], label='test loss')
 plt.legend(loc='upper right')
 plt.show()
 

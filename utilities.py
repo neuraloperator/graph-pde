@@ -521,6 +521,12 @@ class DownsampleGridSplitter(object):
 
         self.index = torch.tensor(range(self.n), dtype=torch.long).reshape(self.resolution, self.resolution)
 
+    def ball_connectivity(self, grid):
+        pwd = sklearn.metrics.pairwise_distances(grid)
+        edge_index = np.vstack(np.where(pwd <= self.radius))
+        n_edges = edge_index.shape[1]
+        return torch.tensor(edge_index, dtype=torch.long), n_edges
+
     def get_data(self, theta):
         theta_d = theta.shape[1]
         theta = theta.reshape(self.resolution, self.resolution, theta_d)
@@ -540,10 +546,7 @@ class DownsampleGridSplitter(object):
                 theta_split = torch.cat([theta_sub, theta_sample],dim=0)
                 X = torch.cat([grid_split,theta_split],dim=1)
 
-                pwd = sklearn.metrics.pairwise_distances(grid_split)
-                edge_index = np.vstack(np.where(pwd <= self.radius))
-                n_edges = edge_index.shape[1]
-                edge_index = torch.tensor(edge_index, dtype=torch.long)
+                edge_index, n_edges = self.ball_connectivity(grid_split)
 
                 edge_attr = np.zeros((n_edges, 4+self.edge_features*2))
                 a = theta_split[:, :self.edge_features]
@@ -593,11 +596,7 @@ class DownsampleGridSplitter(object):
             index_split = index_sub.reshape(-1,)
             X = torch.cat([grid_split, theta_split], dim=1)
 
-
-        pwd = sklearn.metrics.pairwise_distances(grid_split)
-        edge_index = np.vstack(np.where(pwd <= self.radius))
-        n_edges = edge_index.shape[1]
-        edge_index = torch.tensor(edge_index, dtype=torch.long)
+        edge_index, n_edges = self.ball_connectivity(grid_split)
 
         edge_attr = np.zeros((n_edges, 4+self.edge_features*2))
         a = theta_split[:, :self.edge_features]
@@ -642,7 +641,200 @@ class DownsampleGridSplitter(object):
         out = torch.tensor(out, dtype=torch.float)
         return out.reshape(-1,)
 
+class TorusGridSplitter(object):
+    def __init__(self, grid, resolution, r, m=100, radius=0.15,  edge_features=1):
+        super(TorusGridSplitter, self).__init__()
 
+        self.grid = grid.reshape(resolution, resolution,2)
+        # self.theta = theta.reshape(resolution, resolution,-1)
+        # self.y = y.reshape(resolution, resolution,1)
+        self.resolution = resolution
+        if resolution%2==1:
+            self.s = int(((resolution - 1)/r) + 1)
+        else:
+            self.s = int(resolution/r)
+        self.r = r
+        self.n = resolution**2
+        self.m = m
+        self.radius = radius
+        self.edge_features = edge_features
+
+        self.index = torch.tensor(range(self.n), dtype=torch.long).reshape(self.resolution, self.resolution)
+
+    def pairwise_difference(self,grid1, grid2):
+        n = grid1.shape[0]
+        x1 = grid1[:,0]
+        y1 = grid1[:,1]
+        x2 = grid2[:,0]
+        y2 = grid2[:,1]
+
+        X1 = np.tile(x1.reshape(n, 1), [1, n])
+        X2 = np.tile(x2.reshape(1, n), [n, 1])
+        X_diff = X1 - X2
+        Y1 = np.tile(y1.reshape(n, 1), [1, n])
+        Y2 = np.tile(y2.reshape(1, n), [n, 1])
+        Y_diff = Y1 - Y2
+
+        return X_diff, Y_diff
+
+    def torus_connectivity(self, grid):
+        pwd0 = sklearn.metrics.pairwise_distances(grid, grid)
+        X_diff0, Y_diff0 = self.pairwise_difference(grid, grid)
+
+        grid1 = grid
+        grid1[:,0] = grid[:,0]+1
+        pwd1 = sklearn.metrics.pairwise_distances(grid, grid1)
+        X_diff1, Y_diff1 = self.pairwise_difference(grid, grid1)
+
+        grid2 = grid
+        grid2[:, 1] = grid[:, 1] + 1
+        pwd2 = sklearn.metrics.pairwise_distances(grid, grid2)
+        X_diff2, Y_diff2 = self.pairwise_difference(grid, grid2)
+
+        grid3 = grid
+        grid3[:, :] = grid[:, :] + 1
+        pwd3 = sklearn.metrics.pairwise_distances(grid, grid3)
+        X_diff3, Y_diff3 = self.pairwise_difference(grid, grid3)
+
+        grid4 = grid
+        grid4[:, 0] = grid[:, 0] + 1
+        grid4[:, 1] = grid[:, 1] - 1
+        pwd4 = sklearn.metrics.pairwise_distances(grid, grid4)
+        X_diff4, Y_diff4 = self.pairwise_difference(grid, grid4)
+
+        PWD = np.stack([pwd0,pwd1,pwd2,pwd3,pwd4], axis=2)
+        X_DIFF = np.stack([X_diff0,X_diff1,X_diff2,X_diff3,X_diff4], axis=2)
+        Y_DIFF = np.stack([Y_diff0, Y_diff1, Y_diff2, Y_diff3, Y_diff4], axis=2)
+        pwd = np.min(PWD, axis=2)
+        pwd_index = np.argmin(PWD, axis=2)
+        edge_index = np.vstack(np.where(pwd <= self.radius))
+        pwd_index =  pwd_index[np.where(pwd <= self.radius)]
+        PWD_index = (np.where(pwd <= self.radius)[0],  np.where(pwd <= self.radius)[1], pwd_index)
+        distance = PWD[PWD_index]
+        X_difference = X_DIFF[PWD_index]
+        Y_difference = Y_DIFF[PWD_index]
+        n_edges = edge_index.shape[1]
+        return torch.tensor(edge_index, dtype=torch.long), n_edges, distance, X_difference, Y_difference
+
+
+    def get_data(self, theta):
+        theta_d = theta.shape[1]
+        theta = theta.reshape(self.resolution, self.resolution, theta_d)
+        data = []
+        for x in range(self.r):
+            for y in range(self.r):
+                grid_sub = self.grid[x::self.r, y::self.r,:].reshape(-1,2)
+                theta_sub = theta[x::self.r, y::self.r,:].reshape(-1,theta_d)
+
+                perm = torch.randperm(self.n)
+                m = self.m - grid_sub.shape[0]
+                idx = perm[:m]
+                grid_sample = self.grid.reshape(self.n,-1)[idx]
+                theta_sample = theta.reshape(self.n,-1)[idx]
+
+                grid_split = torch.cat([grid_sub, grid_sample],dim=0)
+                theta_split = torch.cat([theta_sub, theta_sample],dim=0)
+                X = torch.cat([grid_split,theta_split],dim=1)
+
+                edge_index, n_edges, distance, X_difference, Y_difference = self.torus_connectivity(grid_split)
+
+                edge_attr = np.zeros((n_edges, 3+self.edge_features*2))
+                a = theta_split[:, :self.edge_features]
+                edge_attr[:, 0] = X_difference.reshape(n_edges, )
+                edge_attr[:, 1] = Y_difference.reshape(n_edges, )
+                edge_attr[:, 2] = distance.reshape(n_edges, )
+                edge_attr[:, 3:3 + self.edge_features] = a[edge_index[0]]
+                edge_attr[:, 3 + self.edge_features: 4 + self.edge_features * 2] = a[edge_index[1]]
+                edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+                split_idx = torch.tensor([x,y],dtype=torch.long).reshape(1,2)
+
+                data.append(Data(x=X, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx))
+        print('test', len(data), X.shape, edge_index.shape, edge_attr.shape)
+        return data
+
+    def sample(self, theta, Y, connectivity='ball'):
+        theta_d = theta.shape[1]
+        theta = theta.reshape(self.resolution, self.resolution, theta_d)
+        Y = Y.reshape(self.resolution, self.resolution)
+
+        x = torch.randint(0,self.r,(1,))
+        y = torch.randint(0,self.r,(1,))
+
+        grid_sub = self.grid[x::self.r, y::self.r, :].reshape(-1, 2)
+        theta_sub = theta[x::self.r, y::self.r, :].reshape(-1, theta_d)
+        Y_sub = Y[x::self.r, y::self.r].reshape(-1,)
+        index_sub = self.index[x::self.r, y::self.r].reshape(-1,)
+        n_sub = Y_sub.shape[0]
+
+        if self.m >= n_sub:
+            m = self.m - n_sub
+            perm = torch.randperm(self.n)
+            idx = perm[:m]
+            grid_sample = self.grid.reshape(self.n, -1)[idx]
+            theta_sample = theta.reshape(self.n, -1)[idx]
+            Y_sample = Y.reshape(self.n, )[idx]
+
+
+            grid_split = torch.cat([grid_sub, grid_sample], dim=0)
+            theta_split = torch.cat([theta_sub, theta_sample], dim=0)
+            Y_split = torch.cat([Y_sub, Y_sample], dim=0).reshape(-1,)
+            index_split = torch.cat([index_sub, idx], dim=0).reshape(-1,)
+            X = torch.cat([grid_split, theta_split], dim=1)
+
+        else:
+            grid_split = grid_sub
+            theta_split = theta_sub
+            Y_split = Y_sub.reshape(-1,)
+            index_split = index_sub.reshape(-1,)
+            X = torch.cat([grid_split, theta_split], dim=1)
+
+
+        edge_index, n_edges, distance, X_difference, Y_difference = self.torus_connectivity(grid_split)
+
+        edge_attr = np.zeros((n_edges, 3+self.edge_features*2))
+        a = theta_split[:, :self.edge_features]
+        edge_attr[:, 0] = X_difference.reshape(n_edges, )
+        edge_attr[:, 1] = Y_difference.reshape(n_edges, )
+        edge_attr[:, 2] = distance.reshape(n_edges, )
+        edge_attr[:, 3:3+self.edge_features] = a[edge_index[0]]
+        edge_attr[:, 3+self.edge_features: 4+self.edge_features*2] = a[edge_index[1]]
+        edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+        split_idx = torch.tensor([x, y], dtype=torch.long).reshape(1, 2)
+        data = Data(x=X, y=Y_split, edge_index=edge_index, edge_attr=edge_attr, split_idx=split_idx, sample_idx=index_split)
+        print('train', X.shape, Y_split.shape, edge_index.shape, edge_attr.shape, index_split.shape)
+
+        return data
+
+
+    def assemble(self, pred, split_idx, batch_size2, sigma=1):
+        assert len(pred) == len(split_idx)
+        assert len(pred) == self.r**2 // batch_size2
+
+        out = torch.zeros((self.resolution,self.resolution))
+        for i in range(len(pred)):
+            pred_i = pred[i].reshape(batch_size2, self.m)
+            split_idx_i = split_idx[i]
+            for j in range(batch_size2):
+                pred_ij = pred_i[j,:]
+                x, y = split_idx_i[j]
+                if self.resolution%2==1:
+                    if x==0:
+                        nx = self.s
+                    else:
+                        nx = self.s-1
+                    if y==0:
+                        ny = self.s
+                    else:
+                        ny = self.s-1
+                else:
+                    nx = self.s
+                    ny = self.s
+                # pred_ij = pred_i[idx : idx + nx * ny]
+                out[x::self.r, y::self.r] = pred_ij[:nx * ny].reshape(nx,ny)
+
+        out = gaussian_filter(out, sigma=sigma, mode='constant', cval=0)
+        out = torch.tensor(out, dtype=torch.float)
+        return out.reshape(-1,)
 
 def downsample(data, grid_size, l):
     data = data.reshape(-1, grid_size, grid_size)
