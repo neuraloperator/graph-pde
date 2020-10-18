@@ -13,7 +13,6 @@ from timeit import default_timer
 import scipy.io
 
 
-
 class KernelNN3(torch.nn.Module):
     def __init__(self, width_node, width_kernel, depth, ker_in, in_width=1, out_width=1):
         super(KernelNN3, self).__init__()
@@ -30,7 +29,9 @@ class KernelNN3(torch.nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         x = self.fc1(x)
         for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
+            x = self.conv1(x, edge_index, edge_attr)
+            if k != self.depth - 1:
+                x = F.relu(x)
 
         x = self.fc2(x)
         return x
@@ -39,20 +40,16 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for m in (100,200,400,800):
-    mtest1 = 100
-    mtest2 = 200
-    mtest3 = 400
-    mtest4 = 800
-
-    r = 2
+ms = [200]
+for case in range(1):
+    r = 1
     s = int(((241 - 1)/r) + 1)
     n = s**2
-    # m = 200
-    k = 5
+    m = ms[case]
+    k = 1
 
-    radius_train = 0.15
-    radius_test = 0.15
+    radius_train = 0.2
+    radius_test = 0.2
     print('resolution', s)
 
 
@@ -60,31 +57,28 @@ for m in (100,200,400,800):
     ntest = 100
 
 
-    batch_size = 10
-    batch_size2 = 10
+    batch_size = 1
+    batch_size2 = 1
     width = 64
-    ker_width = 1000
-    depth = 6
+    ker_width = 256
+    depth = 4
     edge_features = 6
     node_features = 6
 
-    epochs = 200
+    epochs = 100
     learning_rate = 0.0001
     scheduler_step = 50
     scheduler_gamma = 0.5
 
-    if m==800:
-        batch_size = 2
-        epochs = 100
 
-    path_model = 'model/UAI5_s'+str(s)+'_m'+ str(m)
-    path_train_err = 'results/UAI5_s'+str(s)+'_m'+ str(m) + 'train.txt'
-    path_test_err1 = 'results/UAI5_s'+str(s)+'_m'+ str(m)+'_mtest'+ str(mtest1) + 'test.txt'
-    path_test_err2 = 'results/UAI5_s' + str(s) + '_m' + str(m) + '_mtest' + str(mtest2) + 'test.txt'
-    path_test_err3 = 'results/UAI5_s' + str(s) + '_m' + str(m) + '_mtest' + str(mtest3) + 'test.txt'
-    path_test_err4 = 'results/UAI5_s' + str(s) + '_m' + str(m) + '_mtest' + str(mtest4) + 'test.txt'
+    path = 'neurips1_GKN_s'+str(s)+'_ntrain'+str(ntrain)+'_kerwidth'+str(ker_width) + '_m0' + str(m)
+    path_model = 'model/' + path
+    path_train_err = 'results/' + path + 'train.txt'
+    path_test_err = 'results/' + path + 'test.txt'
+    path_runtime = 'results/' + path + 'time.txt'
+    path_image = 'results/' + path
 
-
+    runtime = np.zeros(2, )
     t1 = default_timer()
 
 
@@ -139,56 +133,14 @@ for m in (100,200,400,800):
                                    ))
 
 
-    meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=mtest1)
-    data_test1 = []
+    meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=m)
+    data_test = []
     for j in range(ntest):
         idx = meshgenerator.sample()
         grid = meshgenerator.get_grid()
         edge_index = meshgenerator.ball_connectivity(radius_test)
         edge_attr = meshgenerator.attributes(theta=test_a[j,:])
-        data_test1.append(Data(x=torch.cat([grid, test_a[j, idx].reshape(-1, 1),
-                                           test_a_smooth[j, idx].reshape(-1, 1), test_a_gradx[j, idx].reshape(-1, 1),
-                                           test_a_grady[j, idx].reshape(-1, 1)
-                                           ], dim=1),
-                              y=test_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
-                              ))
-    #
-    meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=mtest2)
-    data_test2 = []
-    for j in range(ntest):
-        idx = meshgenerator.sample()
-        grid = meshgenerator.get_grid()
-        edge_index = meshgenerator.ball_connectivity(radius_test)
-        edge_attr = meshgenerator.attributes(theta=test_a[j,:])
-        data_test2.append(Data(x=torch.cat([grid, test_a[j, idx].reshape(-1, 1),
-                                           test_a_smooth[j, idx].reshape(-1, 1), test_a_gradx[j, idx].reshape(-1, 1),
-                                           test_a_grady[j, idx].reshape(-1, 1)
-                                           ], dim=1),
-                              y=test_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
-                              ))
-    #
-    meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=mtest3)
-    data_test3 = []
-    for j in range(ntest):
-        idx = meshgenerator.sample()
-        grid = meshgenerator.get_grid()
-        edge_index = meshgenerator.ball_connectivity(radius_test)
-        edge_attr = meshgenerator.attributes(theta=test_a[j,:])
-        data_test3.append(Data(x=torch.cat([grid, test_a[j, idx].reshape(-1, 1),
-                                           test_a_smooth[j, idx].reshape(-1, 1), test_a_gradx[j, idx].reshape(-1, 1),
-                                           test_a_grady[j, idx].reshape(-1, 1)
-                                           ], dim=1),
-                              y=test_u[j, idx], edge_index=edge_index, edge_attr=edge_attr, sample_idx=idx
-                              ))
-    #
-    meshgenerator = RandomMeshGenerator([[0,1],[0,1]],[s,s], sample_size=mtest4)
-    data_test4 = []
-    for j in range(ntest):
-        idx = meshgenerator.sample()
-        grid = meshgenerator.get_grid()
-        edge_index = meshgenerator.ball_connectivity(radius_test)
-        edge_attr = meshgenerator.attributes(theta=test_a[j,:])
-        data_test4.append(Data(x=torch.cat([grid, test_a[j, idx].reshape(-1, 1),
+        data_test.append(Data(x=torch.cat([grid, test_a[j, idx].reshape(-1, 1),
                                            test_a_smooth[j, idx].reshape(-1, 1), test_a_gradx[j, idx].reshape(-1, 1),
                                            test_a_grady[j, idx].reshape(-1, 1)
                                            ], dim=1),
@@ -196,10 +148,7 @@ for m in (100,200,400,800):
                               ))
     #
     train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
-    test_loader1 = DataLoader(data_test1, batch_size=batch_size2, shuffle=False)
-    test_loader2 = DataLoader(data_test2, batch_size=batch_size2, shuffle=False)
-    test_loader3 = DataLoader(data_test3, batch_size=batch_size2, shuffle=False)
-    test_loader4 = DataLoader(data_test4, batch_size=2, shuffle=False)
+    test_loader = DataLoader(data_test, batch_size=batch_size2, shuffle=False)
 
     t2 = default_timer()
 
@@ -213,10 +162,7 @@ for m in (100,200,400,800):
     myloss = LpLoss(size_average=False)
     u_normalizer.cuda()
     ttrain = np.zeros((epochs, ))
-    ttest1 = np.zeros((epochs,))
-    ttest2 = np.zeros((epochs,))
-    ttest3 = np.zeros((epochs,))
-    ttest4 = np.zeros((epochs,))
+    ttest = np.zeros((epochs,))
     model.train()
     for ep in range(epochs):
         t1 = default_timer()
@@ -230,9 +176,9 @@ for m in (100,200,400,800):
             mse = F.mse_loss(out.view(-1, 1), batch.y.view(-1,1))
             mse.backward()
 
-            l2 = myloss(u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
-                        u_normalizer.decode(batch.y.view(batch_size, -1),
-                                            sample_idx=batch.sample_idx.view(batch_size, -1)))
+            l2 = myloss(
+                u_normalizer.decode(out.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)),
+                u_normalizer.decode(batch.y.view(batch_size, -1), sample_idx=batch.sample_idx.view(batch_size, -1)))
             optimizer.step()
             train_mse += mse.item()
             train_l2 += l2.item()
@@ -241,44 +187,26 @@ for m in (100,200,400,800):
         t2 = default_timer()
 
         model.eval()
-        test1_l2 = 0.0
-        test2_l2 = 0.0
-        test3_l2 = 0.0
-        test4_l2 = 0.0
+        test_l2 = 0.0
         with torch.no_grad():
-            for batch in test_loader1:
+            for batch in test_loader:
                 batch = batch.to(device)
                 out = model(batch)
                 out = u_normalizer.decode(out.view(batch_size2,-1), sample_idx=batch.sample_idx.view(batch_size2,-1))
-                test1_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
-            for batch in test_loader2:
-                batch = batch.to(device)
-                out = model(batch)
-                out = u_normalizer.decode(out.view(batch_size2,-1), sample_idx=batch.sample_idx.view(batch_size2,-1))
-                test2_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
-            for batch in test_loader3:
-                batch = batch.to(device)
-                out = model(batch)
-                out = u_normalizer.decode(out.view(batch_size2,-1), sample_idx=batch.sample_idx.view(batch_size2,-1))
-                test3_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
-            for batch in test_loader4:
-                batch = batch.to(device)
-                out = model(batch)
-                out = u_normalizer.decode(out.view(2,-1), sample_idx=batch.sample_idx.view(2,-1))
-                test4_l2 += myloss(out, batch.y.view(2, -1)).item()
+                test_l2 += myloss(out, batch.y.view(batch_size2, -1)).item()
+                # test_l2 += myloss(out.view(batch_size2,-1), y_normalizer.encode(batch.y.view(batch_size2, -1))).item()
 
+        t3 = default_timer()
         ttrain[ep] = train_l2/(ntrain * k)
-        ttest1[ep] = test1_l2/ntest
-        ttest2[ep] = test2_l2 / ntest
-        ttest3[ep] = test3_l2 / ntest
-        ttest4[ep] = test4_l2 / ntest
+        ttest[ep] = test_l2/ntest
 
-        print(m, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k))
-        print(test1_l2/ntest, test2_l2/ntest, test3_l2/ntest, test4_l2/ntest)
+        print(k, ntrain, ep, t2-t1, t3-t2, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
 
+    runtime[0] = t2-t1
+    runtime[1] = t3-t2
     np.savetxt(path_train_err, ttrain)
-    np.savetxt(path_test_err1, ttest1)
-    np.savetxt(path_test_err2, ttest2)
-    np.savetxt(path_test_err3, ttest3)
-    np.savetxt(path_test_err4, ttest4)
+    np.savetxt(path_test_err, ttest)
+    np.savetxt(path_runtime, runtime)
     torch.save(model, path_model)
+
+

@@ -2,15 +2,13 @@ import torch
 import numpy as np
 
 import torch.nn.functional as F
-import torch.nn as nn
 
 from torch_geometric.data import Data, DataLoader
 import matplotlib.pyplot as plt
 from utilities import *
-from nn_conv import NNConv, NNConv_old
+from nn_conv import NNConv_old
 
 from timeit import default_timer
-import scipy.io
 
 
 class KernelNN3(torch.nn.Module):
@@ -29,9 +27,7 @@ class KernelNN3(torch.nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         x = self.fc1(x)
         for k in range(self.depth):
-            x = self.conv1(x, edge_index, edge_attr)
-            if k != self.depth - 1:
-                x = F.relu(x)
+            x = F.relu(self.conv1(x, edge_index, edge_attr))
 
         x = self.fc2(x)
         return x
@@ -40,30 +36,35 @@ class KernelNN3(torch.nn.Module):
 TRAIN_PATH = 'data/piececonst_r241_N1024_smooth1.mat'
 TEST_PATH = 'data/piececonst_r241_N1024_smooth2.mat'
 
-for k in (2,):
-    for ntrain in (100,):
-        r = 1
+for m in (100, 200, 400):
+    for radius_train in (0.05, 0.15, 0.4):
+        r = 2
         s = int(((241 - 1)/r) + 1)
         n = s**2
-        m = 200
-        # k = 5
+        # m = 200
+        k = 5
 
-        radius_train = 0.25
-        radius_test = 0.25
+        # radius_train = 0.15
+        radius_test = radius_train
         print('resolution', s)
 
 
-        # ntrain = 100
+        ntrain = 100
         ntest = 100
 
-        if ntrain <= 50:
+        batch_size = 10
+        batch_size2 = 10
+
+        if radius_train == 0.4 and m==400:
+            batch_size = 2
+            batch_size2 = 2
+        if radius_train == 0.4 and m == 200:
             batch_size = 5
             batch_size2 = 5
-        else:
-            batch_size = 20
-            batch_size2 = 20
+        # else:
+
         width = 64
-        ker_width = 64
+        ker_width = 1000
         depth = 6
         edge_features = 6
         node_features = 6
@@ -73,12 +74,11 @@ for k in (2,):
         scheduler_step = 50
         scheduler_gamma = 0.5
 
-
-        path = 'UAI4_s'+str(s)+'_n'+ str(ntrain)+'_k'+ str(k)
-        path_model = 'model/' + path
-        path_train_err = 'results/' + path + 'train.txt'
-        path_test_err = 'results/' + path + 'test.txt'
-        path_image = 'results/' + path
+        path = 'UAI6_s'+str(s)+'_m'+ str(m)+'_radius'+ str(radius_train)
+        path_model = 'model/'+ path
+        path_train_err = 'results/'+ path + 'train.txt'
+        path_test_err = 'results/'+ path + 'test.txt'
+        path_image = 'results/'+ path
 
 
         t1 = default_timer()
@@ -201,7 +201,7 @@ for k in (2,):
             ttrain[ep] = train_l2/(ntrain * k)
             ttest[ep] = test_l2/ntest
 
-            print(k, ntrain, ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
+            print(m, radius_train, ep, t2-t1, train_mse/len(train_loader), train_l2/(ntrain * k), test_l2/ntest)
 
         np.savetxt(path_train_err, ttrain)
         np.savetxt(path_test_err, ttest)

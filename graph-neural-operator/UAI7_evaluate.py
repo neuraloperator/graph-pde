@@ -2,15 +2,14 @@ import torch
 import numpy as np
 
 import torch.nn.functional as F
-import torch.nn as nn
 
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import DataLoader
 import matplotlib.pyplot as plt
 from utilities import *
-from nn_conv import NNConv, NNConv_old
+from nn_conv import NNConv_old
 
 from timeit import default_timer
-import scipy.io
+
 
 class KernelNN(torch.nn.Module):
     def __init__(self, width, ker_width, depth, ker_in, in_width=1, out_width=1):
