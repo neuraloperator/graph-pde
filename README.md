@@ -17,4 +17,8 @@ Inspired by the classical multipole methods, we propose a multi-level graph neur
 ## Files
 The code is in the form of simple scripts. Each script shall be stand-alone and directly runnable.
 
+## Datasets
+We provide the Burgers equation and Darcy flow datasets we used in the paper. The data generation can be found in the paper.
+The data are given in the form of matlab file. They can be loaded with the scripts provided in utilities.py. 
+[Pde data](https://drive.google.com/drive/folders/1UnbQh2WWc6knEHbLn-ZaXrKUZhp7pjt-?usp=sharing)
 
