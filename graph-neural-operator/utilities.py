@@ -493,7 +493,7 @@ class RandomGridSplitter(object):
             for j in range(batch_size2):
                 pred_ij = pred_i[j,:].reshape(-1,)
                 idx = split_idx_i[j,:].reshape(-1,)
-                out[idx] = pred_ij
+                out[idx] += pred_ij
 
         out = out / self.l
 
